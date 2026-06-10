@@ -1,0 +1,25 @@
+# Registry of clients for batch Deep Dive runs.
+# Each entry maps to a client YAML with model_type, run_id, and workspace.
+#
+# model_type: "stan" | "meridian" | "raven"
+# specs_path: relative to deepdive/configs/
+#
+# Add new clients here; the batch notebook reads this registry.
+
+clients:
+  bradesco:
+    specs_path: "bradesco_eletro.yaml"
+    model_type: stan
+    output_subdir: "bradesco"
+
+  hypera:
+    specs_path: "hypera_eletro.yaml"
+    model_type: meridian
+    output_subdir: "hypera"
+    # TODO: fill media_var and workspace_dd in hypera_eletro.yaml before running
+
+  opella:
+    specs_path: "opella_eletro.yaml"
+    model_type: meridian
+    output_subdir: "opella"
+    # TODO: fill media_var and workspace_dd in opella_eletro.yaml before running

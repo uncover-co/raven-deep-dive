@@ -1,0 +1,10 @@
+dim,item,roas_index
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:opella---dorflex$category:ambiente:abrigos-sao-paulo,1.0170562977745037
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:opella---dorflex$category:ambiente:bancas-de-jornal,0.8605845320007242
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:opella---dorflex$category:ambiente:edificios-comerciais,1.1157215900236117
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:opella---dorflex$category:ambiente:edificios-residenciais,1.0889911468185431
+Ambiente,__outros__ambiente,0.9651837961466518
+Praca,$metric:investments$vehicle:eletromidia$category:brand:opella---dorflex$category:praca:recife,0.6901355368885747
+Praca,$metric:investments$vehicle:eletromidia$category:brand:opella---dorflex$category:praca:rio-de-janeiro,1.1727701990252306
+Praca,$metric:investments$vehicle:eletromidia$category:brand:opella---dorflex$category:praca:sao-paulo,0.936415028340369
+Praca,__outros__praca,1.1319623224757822

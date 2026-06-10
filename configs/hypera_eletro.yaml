@@ -1,0 +1,24 @@
+# Client config — Hypera Pharma, Eletromídia Deep Dive (Meridian model)
+
+brand: hypera-neosaldina
+vehicle: eletromidia
+vehicle_specs_path: "../data/vehicle_specs.yaml"
+
+model_type: meridian
+
+mlflow_tracking_uri: "https://mlflow-dev.cloud.uncover.co"
+upgrade_run_id: "f3efef2240ba4b6ab7bd364ee785ca75"
+
+# Workspace for breakdown spend (mammoth BuildDefaultDataset)
+workspace_dd: "ba---eletromidia---deepdive"
+start_date: "2022-01-01"   # TODO: adjust to actual model window
+end_date:   "2025-08-11"   # TODO: adjust
+
+media_var: "Eletromidia"
+
+# null = use all dimensions from vehicle_specs.yaml
+dimensions: null
+
+share_prior_scale: 0.05
+proxy_ct_tolerance: 0.15
+num_steps: 30000

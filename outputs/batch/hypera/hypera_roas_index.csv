@@ -1,0 +1,12 @@
+dim,item,roas_index
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:abrigos-sao-paulo,1.0647198821578723
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:bancas-de-jornal,0.5544014862326798
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:cptm,0.9392640883405025
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:edificios-comerciais,1.3721177543257002
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:metro-rio,0.34082639115637614
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:tv-minuto,1.0756659406573297
+Ambiente,__outros__ambiente,1.623484098191217
+Praca,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:praca:rio-de-janeiro,1.2724447623487212
+Praca,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:praca:sao-paulo,0.9348570880785239
+Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:modelo-de-planejamento:nao-programatica,0.972869745743874
+Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:modelo-de-planejamento:programatica,1.2209979741880532

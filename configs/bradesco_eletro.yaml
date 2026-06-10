@@ -1,0 +1,23 @@
+# Client-specific config for Bradesco Eletromídia Deep Dive.
+
+brand: bradesco
+vehicle: eletromidia
+vehicle_specs_path: "../data/vehicle_specs.yaml"
+
+# MLflow
+mlflow_tracking_uri: "https://mlflow-dev.cloud.uncover.co"
+upgrade_run_id: "3bca00d1fed14732bfffb65bfd9e12bd"
+
+# Workspace for breakdown spend data (mammoth BuildDefaultDataset)
+workspace_dd: "ba---eletromidia---deepdive"
+start_date: "2022-04-04"
+end_date: "2025-08-11"
+
+# null = use all dimensions from vehicle_specs.yaml
+dimensions: null
+
+media_var: "$metric:investments$vehicle:eletromidia$category:brand:bradesco"
+
+share_prior_scale: 0.05
+proxy_ct_tolerance: 0.15
+num_steps: 30000

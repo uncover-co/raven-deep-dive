@@ -1,0 +1,326 @@
+vehicles:
+  eletromidia:
+    vehicle_slug: eletromidia
+    default_metric: investments
+    default_media_metric: investments
+
+    # Dimensões que recebem modelo Raven 2 próprio.
+    # Estado, Vertical e Tipo são derivados por rollup de Praca e Ambiente.
+    model_dims:
+      - Ambiente
+      - Praca
+      - Midia
+      - Modelo de Planejamento
+
+    # Cada modelo pode ter uma regra de slug diferente.
+    # Use {metric}, {vehicle}, {brand}, {category}, {value} nos templates.
+    models:
+      stan:
+        default_template: "$metric:{metric}$vehicle:{vehicle}$category:brand:{brand}$category:{category}:{value}"
+        state_template: "$metric:{metric}$state:{value}$vehicle:{vehicle}$category:brand:{brand}"
+      meridian:
+        default_template: "$metric:{metric}$category:brand:{brand}$category:{category}:{value}$vehicle:{vehicle}"
+        state_template: "$metric:{metric}$state:{value}$vehicle:{vehicle}$category:brand:{brand}"
+
+    breakdowns:
+      Praca:
+        category: praca
+        rollups:
+          - level: estado
+            map: praca_to_estado
+          - level: praca
+        values:
+          - belem
+          - belo-horizonte
+          - brasilia
+          - campinas
+          - curitiba
+          - fortaleza
+          - goiania
+          - joao-pessoa
+          - jundiai
+          - maceio
+          - manaus
+          - natal
+          - porto-alegre
+          - praia-grande
+          - recife
+          - ribeirao-preto
+          - rio-de-janeiro
+          - salvador
+          - santos
+          - sao-jose-dos-campos
+          - sao-paulo
+          - sorocaba
+          - vitoria
+
+      Estado:
+        category: state
+        values:
+          - alagoas
+          - amazonas
+          - bahia
+          - ceara
+          - distrito-federal
+          - espirito-santo
+          - goias
+          - minas-gerais
+          - para
+          - paraiba
+          - parana
+          - pernambuco
+          - rio-de-janeiro
+          - rio-grande-do-norte
+          - rio-grande-do-sul
+          - santa-catarina
+          - sao-paulo
+
+      Vertical:
+        category: vertical
+        values:
+          - aeroportos
+          - edificios
+          - estabelecimentos-comerciais
+          - mub-rua
+          - shoppings
+          - transportes
+
+      Ambiente:
+        category: ambiente
+        rollups:
+          - level: grupo
+            groups: grupos         
+            members_key: ambientes 
+          - level: vertical
+            groups: grupos
+            members_key: ambientes
+            attr: vertical        
+          - level: tipo
+            groups: grupos
+            members_key: ambientes
+            attr: tipo
+        templates:
+          meridian: "$metric:{metric}$category:ambiente:{value}$category:brand:{brand}$vehicle:{vehicle}"
+        values:
+          - abrigos-campinas
+          - abrigos-fortaleza
+          - abrigos-porto-alegre
+          - abrigos-salvador
+          - abrigos-sao-paulo
+          - aeroporto-congonhas
+          - aeroporto-fortaleza
+          - aeroporto-galeao
+          - aeroporto-porto-alegre
+          - aeroporto-salvador
+          - aeroporto-santos-dumont
+          - bancas-de-jornal
+          - cptm
+          - edificios-comerciais
+          - edificios-residenciais
+          - empena
+          - leds-norte-e-nordeste
+          - leds-outdoor
+          - metro-rio
+          - mubs-festivais-e-eventos
+          - relogios-recife
+          - relogios-salvador
+          - shoppings-cobertura
+          - shoppings-experiencia
+          - supervia
+          - tembici
+          - terminal-gentileza
+          - tv-minuto
+          - universidades
+          - vlt
+
+      Midia:
+        category: midia
+        values:
+          - digital
+          - estatico
+
+      Tipo:
+        category: tipo
+        values:
+          - indoor
+          - outdoor
+
+      Modelo de Planejamento:
+        category: modelo-de-planejamento
+        values:
+          - nao-programatica
+          - programatica
+
+    # ── Hierarquia de agregação ──────────────────────────────────────────────
+    hierarchy:
+
+      # Praça → Estado (agregação geográfica)
+      praca_to_estado:
+        belem:               para
+        belo-horizonte:      minas-gerais
+        brasilia:            distrito-federal
+        campinas:            sao-paulo
+        curitiba:            parana
+        fortaleza:           ceara
+        goiania:             goias
+        joao-pessoa:         paraiba
+        jundiai:             sao-paulo
+        maceio:              alagoas
+        manaus:              amazonas
+        natal:               rio-grande-do-norte
+        porto-alegre:        rio-grande-do-sul
+        praia-grande:        sao-paulo
+        recife:              pernambuco
+        ribeirao-preto:      sao-paulo
+        rio-de-janeiro:      rio-de-janeiro
+        salvador:            bahia
+        santos:              sao-paulo
+        sao-jose-dos-campos: sao-paulo
+        sao-paulo:           sao-paulo
+        sorocaba:            sao-paulo
+        vitoria:             espirito-santo
+
+      # Grupos de Ambientes → vertical + tipo
+      # Usado para agregar contribuições Ambiente → Vertical/Tipo no DD
+      grupos:
+
+        # ── Vertical: mub-rua | ───────────────────────────────
+        relogios-de-rua:
+          vertical: ruas
+          tipo: outdoor
+          ambientes:
+            - relogios-recife
+            - relogios-salvador
+
+        mobiliarios-urbanos:
+          vertical: ruas
+          tipo: outdoor
+          ambientes:
+            - abrigos-campinas
+            - abrigos-fortaleza
+            - abrigos-porto-alegre
+            - abrigos-salvador
+            - abrigos-sao-paulo
+            - mubs-festivais-e-eventos
+
+        tembici:
+          vertical: ruas
+          tipo: outdoor
+          ambientes:
+            - tembici
+
+        bancas-de-jornal:
+          vertical: ruas
+          tipo: outdoor
+          ambientes:
+            - bancas-de-jornal
+
+        grandes-formatos:
+          vertical: ruas
+          tipo: outdoor
+          ambientes:
+            - empena
+            - leds-outdoor
+            - leds-norte-e-nordeste
+
+        # ── Vertical: transportes | ───────────────────────────
+        cptm:
+          vertical: transportes
+          tipo: indoor
+          ambientes:
+            - cptm
+
+        metro-rio:
+          vertical: transportes
+          tipo: indoor
+          ambientes:
+            - metro-rio
+
+        supervia:
+          vertical: transportes
+          tipo: indoor
+          ambientes:
+            - supervia
+
+        vlt-tig:
+          vertical: transportes
+          tipo: indoor
+          ambientes:
+            - vlt
+            - terminal-gentileza
+
+        interno-de-trem:
+          vertical: transportes
+          tipo: indoor
+          ambientes:
+            - tv-minuto
+
+        # ── Vertical: edificios  ─────────────────────────────
+        edificios-comerciais:
+          vertical: edificios
+          tipo: indoor
+          ambientes:
+            - edificios-comerciais
+
+        edificios-residenciais:
+          vertical: edificios
+          tipo: indoor
+          ambientes:
+            - edificios-residenciais
+
+        universidades:
+          vertical: edificios
+          tipo: indoor
+          ambientes:
+            - universidades
+            
+        # ── Vertical: aeroportos ─────────────────────────────────────────────
+        aeroporto-congonhas:
+          vertical: aeroportos
+          tipo: indoor
+          ambientes:
+            - aeroporto-congonhas
+
+        aeroporto-galeao:
+          vertical: aeroportos
+          tipo: indoor
+          ambientes:
+            - aeroporto-galeao
+
+        aeroporto-santos-dumont:
+          vertical: aeroportos
+          tipo: indoor
+          ambientes:
+            - aeroporto-santos-dumont
+
+        aeroporto-fortaleza:
+          vertical: aeroportos
+          tipo: indoor
+          ambientes:
+            - aeroporto-fortaleza
+
+        aeroporto-porto-alegre:
+          vertical: aeroportos
+          tipo: indoor
+          ambientes:
+            - aeroporto-porto-alegre
+
+        aeroporto-salvador:
+          vertical: aeroportos
+          tipo: indoor
+          ambientes:
+            - aeroporto-salvador
+
+        # ── Vertical: shoppings ──────────────────────────────────────────────
+        shoppings-cobertura:
+          vertical: shoppings
+          tipo: indoor
+          ambientes:
+            - shoppings-cobertura
+
+        shoppings-experiencia:
+          vertical: shoppings
+          tipo: indoor
+          ambientes:
+            - shoppings-experiencia
+
