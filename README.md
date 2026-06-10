@@ -59,10 +59,9 @@ deepdive/
 | Problema | Solução |
 |---|---|
 | Modelos por dimensão sem âncora comum → shares inconsistentes | Proxy exact likelihood fixa soma em `C_t` por modelo |
-| Coluneas correlacionadas por falta de sinal → divergência | `run_diagnostics()` buketiza vars com <2% de spend em `__outros__` |
+| Colunas correlacionadas por falta de sinal → divergência | `run_diagnostics()` buketiza vars com <2% de spend em `__outros__` |
 | `_model_context` ausente em Meridians antigos | `_patch_meridian_model_context()` reconstrói de `_input_data + _model_spec` |
 | Análise manual por cliente, sem visão cross-client | `run_deep_dive_batch()` + `consolidate_results()` + `analyze_batch()` |
-| Rollups hardcoded por veículo (praça, ambiente) | Rollups declarativos no YAML (`map:` / `groups:` / identity) via `rollup_dim()` |
 | Visualização hierárquica inexistente | `analyze_trees()` gera sunburst/treemap/icicle por dimensão, genérico por veículo |
 
 ---
@@ -71,7 +70,7 @@ deepdive/
 
 ### Arquitetura Modular
 
-Cada notebook vira fino — chama funções importadas de `src/`. Dez módulos com responsabilidades separadas (config, extração, diagnósticos, pipeline, plots, report, batch, dados sintéticos, efeito CSL, patch Raven).
+Cada notebook chama funções importadas de `src/`. Dez módulos com responsabilidades separadas (config, extração, diagnósticos, pipeline, plots, report, batch, dados sintéticos, efeito CSL, patch Raven).
 
 ### Dataclasses Tipadas
 
