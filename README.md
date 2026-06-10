@@ -1,7 +1,7 @@
-# Deep Dive — Atribuição Hierárquica de Mídia OOH
+# Deep Dive
 
-> Quebra a contribuição agregada de um veículo de mídia (ex: Eletromídia) em sub-canais
-> (Ambiente, Praça, Mídia, Modelo de Planejamento) usando modelos Deep Dive Raven com âncoras e priors calibrados.
+> Quebra a contribuição agregada de um veículo de mídia em sub-canais
+> usando modelos Deep Dive Raven com âncoras e priors calibrados.
 
 ---
 
