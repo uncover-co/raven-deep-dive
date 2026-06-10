@@ -159,16 +159,28 @@ def run_deep_dive_batch(
 
 # ── Hierarchy rollups ─────────────────────────────────────────────────────────
 
-def _extract_value_from_slug(slug: str, category: str) -> str | None:
-    """Extract dimension value from slug. Handles $category:{cat}:{val} and $state:{val}."""
-    m = _re.search(rf"\$category:{_re.escape(category)}:([^$]+)", slug)
-    if m:
-        return m.group(1)
-    if category == "state":
-        m = _re.search(r"\$state:([^$]+)", slug)
-        if m:
-            return m.group(1)
-    return None
+def _build_slug_extractor(vehicle_spec: dict, category: str):
+    """Build a slug→value extractor from model templates in vehicle_spec."""
+    patterns = []
+    for model_spec in vehicle_spec.get("models", {}).values():
+        for tmpl_key in ("default_template", "state_template"):
+            tmpl = model_spec.get(tmpl_key, "")
+            for segment in tmpl.split("$"):
+                if "{value}" not in segment:
+                    continue
+                pat = segment.replace("{category}", _re.escape(category))
+                pat = _re.sub(r"\{(?!value\})[^}]+\}", r"[^$]+", pat)
+                pat = pat.replace("{value}", r"([^$]+)")
+                patterns.append(_re.compile(r"\$" + pat))
+
+    def extract(slug: str) -> str | None:
+        for p in patterns:
+            m = p.search(slug)
+            if m:
+                return m.group(1)
+        return None
+
+    return extract
 
 
 def _shares_df(item_model: dict, item_spend: dict, extra_cols: dict | None = None) -> pd.DataFrame:
@@ -200,14 +212,14 @@ def _shares_df(item_model: dict, item_spend: dict, extra_cols: dict | None = Non
 def _rollup_flat(
     shares_model: pd.Series,
     shares_spend: pd.Series,
-    category: str,
+    extract,
     flat_map: dict[str, str],
 ) -> pd.DataFrame:
     """Aggregate slug shares via flat {value → target} mapping."""
     agg_m: dict[str, float] = {}
     agg_s: dict[str, float] = {}
     for slug, sm in shares_model.items():
-        val    = _extract_value_from_slug(slug, category) or slug.split(":")[-1]
+        val    = extract(slug) or slug.split(":")[-1]
         target = flat_map.get(val, val)
         agg_m[target] = agg_m.get(target, 0.0) + float(sm)
         agg_s[target] = agg_s.get(target, 0.0) + float(shares_spend.get(slug, 0.0))
@@ -217,7 +229,7 @@ def _rollup_flat(
 def _rollup_groups(
     shares_model: pd.Series,
     shares_spend: pd.Series,
-    category: str,
+    extract,
     groups_spec: dict[str, dict],
     members_key: str,
     attr: str | None,
@@ -245,7 +257,7 @@ def _rollup_groups(
     agg_m: dict[str, float] = {}
     agg_s: dict[str, float] = {}
     for slug, sm in shares_model.items():
-        val = _extract_value_from_slug(slug, category) or slug.split(":")[-1]
+        val = extract(slug) or slug.split(":")[-1]
         key = member_to_key.get(val, val)
         agg_m[key] = agg_m.get(key, 0.0) + float(sm)
         agg_s[key] = agg_s.get(key, 0.0) + float(shares_spend.get(slug, 0.0))
@@ -281,16 +293,18 @@ def rollup_dim(
     category     = bd_spec.get("category", "")
     rollup_specs = bd_spec.get("rollups", [])
     hierarchy    = vehicle_spec.get("hierarchy", {})
+    extract      = _build_slug_extractor(vehicle_spec, category) if category else lambda slug: None
+
+    def _key(slug: str) -> str:
+        return extract(slug) or slug.split(":")[-1]
 
     if not rollup_specs:
-        # No rollup → extract clean values from slugs for cross-client comparability
         agg_m: dict[str, float] = {}
         agg_s: dict[str, float] = {}
         for slug, sm in shares_model.items():
-            key = (_extract_value_from_slug(slug, category)
-                   if category else slug.split(":")[-1])
-            agg_m[key] = agg_m.get(key, 0.0) + float(sm)
-            agg_s[key] = agg_s.get(key, 0.0) + float(shares_spend.get(slug, 0.0))
+            k = _key(slug)
+            agg_m[k] = agg_m.get(k, 0.0) + float(sm)
+            agg_s[k] = agg_s.get(k, 0.0) + float(shares_spend.get(slug, 0.0))
         return {"raw": _shares_df(agg_m, agg_s)}
 
     result: dict[str, pd.DataFrame] = {}
@@ -298,24 +312,22 @@ def rollup_dim(
         level = rspec["level"]
         if "map" in rspec:
             flat_map = hierarchy.get(rspec["map"], {})
-            result[level] = _rollup_flat(shares_model, shares_spend, category, flat_map)
+            result[level] = _rollup_flat(shares_model, shares_spend, extract, flat_map)
         elif "groups" in rspec:
             groups_spec = hierarchy.get(rspec["groups"], {})
             result[level] = _rollup_groups(
-                shares_model, shares_spend, category,
+                shares_model, shares_spend, extract,
                 groups_spec,
                 members_key=rspec.get("members_key", "values"),
                 attr=rspec.get("attr"),
             )
         else:
-            # No map/groups → clean slug extraction (identity rollup)
-            agg_m: dict[str, float] = {}
-            agg_s: dict[str, float] = {}
+            agg_m = {}
+            agg_s = {}
             for slug, sm in shares_model.items():
-                key = (_extract_value_from_slug(slug, category)
-                       if category else slug.split(":")[-1])
-                agg_m[key] = agg_m.get(key, 0.0) + float(sm)
-                agg_s[key] = agg_s.get(key, 0.0) + float(shares_spend.get(slug, 0.0))
+                k = _key(slug)
+                agg_m[k] = agg_m.get(k, 0.0) + float(sm)
+                agg_s[k] = agg_s.get(k, 0.0) + float(shares_spend.get(slug, 0.0))
             result[level] = _shares_df(agg_m, agg_s)
     return result
 

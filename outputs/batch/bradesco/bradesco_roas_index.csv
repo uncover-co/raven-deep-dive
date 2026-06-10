@@ -1,20 +1,20 @@
 dim,item,roas_index
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:abrigos-porto-alegre,0.48368665578170533
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:abrigos-sao-paulo,0.3977708099063125
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:cptm,1.6570122094094206
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:edificios-comerciais,1.8541278132101393
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:edificios-residenciais,1.8341449152780767
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:abrigos-porto-alegre,0.4836866557817058
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:abrigos-sao-paulo,0.3977708099063124
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:cptm,1.657012209409421
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:edificios-comerciais,1.8541278132101384
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:edificios-residenciais,1.8341449152780755
 Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:mubs-festivais-e-eventos,0.051555998321077295
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:relogios-recife,1.239944926512191
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:relogios-recife,1.239944926512193
 Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:relogios-salvador,2.1290739260425666
-Ambiente,__outros__ambiente,0.3375355833389136
-Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:porto-alegre,2.1644941408438734
-Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:recife,1.582358548101411
-Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:rio-de-janeiro,0.9605084663293213
-Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:salvador,0.8317560000959906
-Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:sao-paulo,0.858743126188502
-Praca,__outros__praca,0.5146383692702229
+Ambiente,__outros__ambiente,0.3375355833389135
+Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:porto-alegre,2.1644941408439005
+Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:recife,1.5823585481013933
+Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:rio-de-janeiro,0.9605084663293163
+Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:salvador,0.8317560000959755
+Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:sao-paulo,0.8587431261885035
+Praca,__outros__praca,0.5146383692702263
 Midia,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:midia:digital,1.1403258278362434
-Midia,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:midia:estatico,0.04440867456014411
-Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:modelo-de-planejamento:nao-programatica,1.0903300513530954
-Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:modelo-de-planejamento:programatica,0.9013048827277166
+Midia,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:midia:estatico,0.044408674560144135
+Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:modelo-de-planejamento:nao-programatica,1.0903300500766404
+Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:modelo-de-planejamento:programatica,0.9013048841223783

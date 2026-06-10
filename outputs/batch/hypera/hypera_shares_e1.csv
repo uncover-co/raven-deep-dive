@@ -1,12 +1,12 @@
 dim,item,contrib_share,spend_share,proxy_ratio,csl_max_dev
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:abrigos-sao-paulo,0.5744332516737284,0.5395158494734992,0.994985199883642,0.061281837054620286
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:bancas-de-jornal,0.036225723351459786,0.0653420386688069,0.994985199883642,0.061281837054620286
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:cptm,0.10360164150838286,0.11030086510751931,0.994985199883642,0.061281837054620286
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:edificios-comerciais,0.12459442734570239,0.09080447137493082,0.994985199883642,0.061281837054620286
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:metro-rio,0.031685836760667746,0.09296767381528803,0.994985199883642,0.061281837054620286
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:tv-minuto,0.06798768804097258,0.06320520662709272,0.994985199883642,0.061281837054620286
-Ambiente,__outros__ambiente,0.0614714313190862,0.037863894932863074,0.994985199883642,0.061281837054620286
-Praca,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:praca:rio-de-janeiro,0.24553845829182305,0.1929659074855241,0.869717422943285,0.05257255080629897
-Praca,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:praca:sao-paulo,0.7544615417081769,0.8070340925144759,0.869717422943285,0.05257255080629897
-Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:modelo-de-planejamento:nao-programatica,0.8664965058847023,0.8906603475701295,0.8106419843519167,0.024163841685427248
-Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:modelo-de-planejamento:programatica,0.1335034941152978,0.10933965242987055,0.8106419843519167,0.024163841685427248
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:abrigos-sao-paulo,0.5744332516738349,0.5395158494734992,0.994985199883653,0.061281837054653586
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:bancas-de-jornal,0.03622572335144788,0.0653420386688069,0.994985199883653,0.061281837054653586
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:cptm,0.10360164150814881,0.11030086510751931,0.994985199883653,0.061281837054653586
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:edificios-comerciais,0.12459442734590635,0.09080447137493082,0.994985199883653,0.061281837054653586
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:metro-rio,0.031685836760634446,0.09296767381528803,0.994985199883653,0.061281837054653586
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:ambiente:tv-minuto,0.0679876880409542,0.06320520662709272,0.994985199883653,0.061281837054653586
+Ambiente,__outros__ambiente,0.06147143131907321,0.037863894932863074,0.994985199883653,0.061281837054653586
+Praca,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:praca:rio-de-janeiro,0.2455384595599254,0.19296590748552414,0.8697174238155552,0.05257255207440126
+Praca,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:praca:sao-paulo,0.7544615404400746,0.8070340925144759,0.8697174238155552,0.05257255207440126
+Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:modelo-de-planejamento:nao-programatica,0.8664965058844394,0.8906603475701295,0.8106419843524287,0.024163841685690177
+Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:hypera-neosaldina$category:modelo-de-planejamento:programatica,0.1335034941155607,0.10933965242987052,0.8106419843524287,0.024163841685690177
