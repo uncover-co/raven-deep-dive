@@ -165,7 +165,7 @@ def _run_raven2_eletro(
     )
 
     _proxy_ratio = contribs.sum(axis=1).sum() / (_ct.sum() + 1e-12)
-    _sh_mod = contribs.mean() / (contribs.mean().sum() + 1e-12)
+    _sh_mod = contribs.sum() / (contribs.sum().sum() + 1e-12)
     _sh_spend = features_raw[variaveis].sum() / (features_raw[variaveis].sum().sum() + 1e-12)
     _csl_max_dev = (_sh_mod - _sh_spend).abs().max()
 
