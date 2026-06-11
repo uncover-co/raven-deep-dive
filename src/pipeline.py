@@ -69,10 +69,8 @@ def _run_raven2_eletro(
     auxiliary_metric_df: pd.DataFrame | None = None,
     verbose: bool = True,
 ) -> dict:
-    """Raven 2 E1 per dimension.
-
-    Source: Deep_Dive_Eletromidia_Raven2.ipynb cell 34 — run_raven2_eletro.
-    Approach B: raw features normalized per-column → Hill in [0,1].
+    """Raven per dimension.
+    Approach: raw features normalized per-column → Hill in [0,1].
     Target = eletro_contrib (not full KPI) → clean identification.
     """
     eletro_contrib = eletro_contrib.copy()
