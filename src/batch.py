@@ -405,36 +405,3 @@ def consolidate_results(
     return pd.DataFrame(rows)
 
 
-def meta_summary(df_meta: pd.DataFrame) -> pd.DataFrame:
-    """Pivot ROAS index: rows = item, columns = client × dim."""
-    pivot = df_meta.pivot_table(
-        index="item",
-        columns=["client", "dim"],
-        values="roas_index",
-        aggfunc="mean",
-    ).round(3)
-    return pivot
-
-
-def print_meta_report(df_meta: pd.DataFrame) -> None:
-    """Print tabular meta-analysis report."""
-    print(f"\n{'═'*72}")
-    print("  META-ANÁLISE  —  ROAS Index por Cliente × Dimensão × Item")
-    print(f"{'═'*72}")
-
-    for (client, dim), group in df_meta.groupby(["client", "dim"]):
-        proxy_str = f"proxy={group['proxy_ratio'].iloc[0]:.3f}" if len(group) > 0 else ""
-        print(f"\n  [{client}] {dim}  ({proxy_str})")
-        print(f"  {'item':<32} {'share_model':>11}  {'share_spend':>11}  {'ROAS index':>10}")
-        print(f"  {'─'*68}")
-        for _, row in group.sort_values("roas_index", ascending=False).iterrows():
-            ri = f"{row['roas_index']:.3f}" if pd.notna(row["roas_index"]) else "  n/a "
-            print(f"  {str(row['item'])[:32]:<32} "
-                  f"{row['share_model']:>10.1%}  "
-                  f"{row['share_spend']:>10.1%}  "
-                  f"{ri:>10}")
-
-    print(f"\n{'═'*72}")
-    print(f"  Clientes: {sorted(df_meta['client'].unique())}")
-    print(f"  Dimensões: {sorted(df_meta['dim'].unique())}")
-    print(f"{'═'*72}")

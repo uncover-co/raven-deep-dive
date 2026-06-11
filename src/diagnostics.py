@@ -23,7 +23,6 @@ def run_diagnostics(
 ) -> tuple[DeepDiveConfig, DiagnosisResult]:
     """Filter config vars by spend structure; bucket tiny vars into __outros__.
 
-    Ported from utils.py:diagnose_dd_config (line 782).
     Returns updated DeepDiveConfig (vars_per_dim filtered) + DiagnosisResult.
 
     Side-effect: adds __outros__ columns to upgrade.spend_df for bucketed dims.
@@ -98,6 +97,7 @@ def run_diagnostics(
         share_prior_scale=config.share_prior_scale,
         proxy_ct_tolerance=config.proxy_ct_tolerance,
         num_steps=config.num_steps,
+        vehicle_spec=config.vehicle_spec,
     )
     return new_config, DiagnosisResult(
         spend_report=spend_report,
