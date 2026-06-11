@@ -60,7 +60,6 @@ deepdive/
 |---|---|
 | Modelos por dimensão sem âncora comum → shares inconsistentes | Proxy exact likelihood fixa soma em `C_t` por modelo |
 | Colunas correlacionadas por falta de sinal → divergência | `run_diagnostics()` buketiza vars com <2% de spend em `__outros__` |
-| `_model_context` ausente em Meridians antigos | `_patch_meridian_model_context()` reconstrói de `_input_data + _model_spec` |
 | Análise manual por cliente, sem visão cross-client | `run_deep_dive_batch()` + `consolidate_results()` + `analyze_batch()` |
 | Visualização hierárquica inexistente | `analyze_trees()` gera sunburst/treemap/icicle por dimensão, genérico por veículo |
 
@@ -176,9 +175,8 @@ Isso garante que variáveis com contribuições maiores tenham prior mais rígid
 |---|---|---|
 | Proxy exact (tolerância ±15%) | Proxy proporcional (escala livre) | Proporcional tem fator de escala não identificado → pode tornar shares arbitrárias |
 | CSL em espaço de shares (Normal) | Log-ratio | Normal evita singularidades em share=0 |
-| MAP com CosineScheduleAdamW | HMC / NUTS | Velocidade: MAP converge em ~30k steps vs. muito tempo de MCMC para este número de variáveis |
+| MAP com CosineScheduleAdamW | Adam (lr fixo) | Weight decay regulariza `max_effect` e evita explosão em canais com pouco spend; cosine decay estabiliza convergência na fase final sem tuning manual de lr |
 | PiecewiseLinearTrend no Deep Dive Raven | FlatTrend | Sub-canais podem ter dinâmicas independentes; piecewise detecta breakpoints locais |
-| Semente fixa `PRNGKey(0)` | Multi-start | Reprodutibilidade; estabilidade delegada ao CSL em vez de ensemble de inicializações |
 | Rollups declarativos em YAML | Código Python por veículo | Extensível sem mudança de código; YAML novos por veículo e clietes são suficientes |
 
 ---
