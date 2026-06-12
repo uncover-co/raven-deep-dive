@@ -19,6 +19,7 @@ class UpgradeResult:
     mmm_config: dict                # {media_features, control_features, target, ...}
     y_hat: pd.Series                # fitted KPI values (sum of contribs)
     model_type: ModelType = "stan"  # "stan" | "meridian" | "raven"
+    y_actual: pd.Series | None = None  # observed KPI — required for y_adj strategy
 
 
 def load_upgrade(run_id: str, tracking_uri: str | None = None) -> UpgradeResult:
@@ -41,6 +42,19 @@ def load_upgrade(run_id: str, tracking_uri: str | None = None) -> UpgradeResult:
 
     y_hat = contrib_df.sum(axis=1)
 
+    # Actual observed KPI — try common mammoth/Stan attribute names
+    y_actual: pd.Series | None = None
+    for attr in ("y", "target", "data"):
+        val = getattr(stan_model, attr, None)
+        if val is None:
+            continue
+        if isinstance(val, pd.Series):
+            y_actual = val.reindex(contrib_df.index)
+            break
+        if isinstance(val, dict) and "y" in val:
+            y_actual = pd.Series(val["y"], index=contrib_df.index)
+            break
+
     # mmm_config from run params (set by mammoth when logging)
     client = mlflow.tracking.MlflowClient()
     run = client.get_run(run_id)
@@ -53,6 +67,7 @@ def load_upgrade(run_id: str, tracking_uri: str | None = None) -> UpgradeResult:
         mmm_config=mmm_config,
         y_hat=y_hat,
         model_type="stan",
+        y_actual=y_actual,
     )
 
 
@@ -103,6 +118,15 @@ def load_meridian_upgrade(run_id: str, tracking_uri: str | None = None) -> Upgra
     pivoted = get_pivoted_contributions(visualizations, use_kpi=True, selected_geo=None)
     contributions = create_incremental_outcome_dataframe(visualizations, pivoted)
 
+    y_actual: pd.Series | None = None
+    if "y_true" in contributions.columns:
+        _yt = contributions["y_true"]
+        if "time" in contributions.columns:
+            _yt = _yt.set_axis(pd.to_datetime(contributions["time"]).dt.normalize())
+        else:
+            _yt = _yt.set_axis(pd.to_datetime(_yt.index).normalize())
+        y_actual = _yt.rename(None)
+
     _drop = [c for c in ["All Channels", "y_true", "y_pred", "baseline", "residual"]
              if c in contributions.columns]
     contrib_df = contributions.drop(columns=_drop)
@@ -124,6 +148,7 @@ def load_meridian_upgrade(run_id: str, tracking_uri: str | None = None) -> Upgra
         mmm_config=mmm_config,
         y_hat=y_hat,
         model_type="meridian",
+        y_actual=y_actual,
     )
 
 

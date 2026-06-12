@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 import jax
 import numpy as np
@@ -190,9 +190,15 @@ def run_deep_dive_e1(
     config: DeepDiveConfig,
     upgrade: UpgradeResult,
     auxiliary_metric_dfs: dict[str, pd.DataFrame] | None = None,
+    strategy: Literal["e1", "y_adj"] = "e1",
     verbose: bool = True,
 ) -> DDResult:
-    """Run E1 per dimension; collect into DDResult."""
+    """Run E1 or y_adj per dimension; collect into DDResult.
+
+    strategy="e1"    : target = C_t_hat (contribuição do veículo no R1)
+    strategy="y_adj" : target = residual_R1 + C_t_hat = y - (y_hat - C_t_hat)
+                       Requer upgrade.y_actual preenchido no loader.
+    """
     if config.media_var not in upgrade.contrib_df.columns:
         available = list(upgrade.contrib_df.columns)[:10]
         raise KeyError(
@@ -200,6 +206,21 @@ def run_deep_dive_e1(
             f"Available columns (first 10): {available}"
         )
     eletro_contrib = upgrade.contrib_df[config.media_var]
+
+    if strategy == "y_adj":
+        if upgrade.y_actual is None:
+            raise ValueError(
+                "strategy='y_adj' requer upgrade.y_actual. "
+                "Verifique se o loader preencheu y_actual (Stan: stan_model.y / Meridian: y_true)."
+            )
+        y_adj_raw = upgrade.y_actual - upgrade.y_hat + eletro_contrib
+        target = y_adj_raw.clip(lower=0)
+        if verbose:
+            ratio = target.sum() / (eletro_contrib.sum() + 1e-12)
+            neg_weeks = int((y_adj_raw < 0).sum())
+            print(f"[y_adj] ratio={ratio:.4f} (esperado ≈ 1.0)  semanas_negativas_clipadas={neg_weeks}")
+    else:
+        target = eletro_contrib
 
     models, contribs, shares_model, shares_spend = {}, {}, {}, {}
     proxy_ratios, csl_devs, features_raw_all, col_maxes_all = {}, {}, {}, {}
@@ -219,7 +240,7 @@ def run_deep_dive_e1(
         r = _run_raven2_eletro(
             dim_name=dim,
             features_df=upgrade.spend_df[available].copy(),
-            eletro_contrib=eletro_contrib,
+            eletro_contrib=target,
             share_prior_scale=config.share_prior_scale,
             proxy_ct_tolerance=config.proxy_ct_tolerance,
             num_steps=config.num_steps,
