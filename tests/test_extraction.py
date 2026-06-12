@@ -18,6 +18,21 @@ def test_upgrade_result_fields():
     assert ur.y_hat.sum() == 300.0
     assert ur.mmm_config["media_features"] == ["a"]
     assert ur.model is None
+    assert ur.y_actual is None  # optional field defaults to None
+
+
+def test_upgrade_result_y_actual():
+    y_actual = pd.Series([110.0, 215.0])
+    ur = UpgradeResult(
+        model=None,
+        contrib_df=pd.DataFrame({"a": [1, 2]}),
+        spend_df=pd.DataFrame(),
+        mmm_config={},
+        y_hat=pd.Series([100.0, 200.0]),
+        y_actual=y_actual,
+    )
+    assert ur.y_actual is not None
+    assert list(ur.y_actual) == [110.0, 215.0]
 
 
 def test_load_upgrade_with_mocks():

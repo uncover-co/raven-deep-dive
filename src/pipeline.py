@@ -207,6 +207,9 @@ def run_deep_dive_e1(
         )
     eletro_contrib = upgrade.contrib_df[config.media_var]
 
+    if strategy not in ("e1", "y_adj"):
+        raise ValueError(f"strategy deve ser 'e1' ou 'y_adj', recebido: '{strategy}'")
+
     if strategy == "y_adj":
         if upgrade.y_actual is None:
             raise ValueError(
