@@ -64,6 +64,7 @@ def _run_raven2_eletro(
     share_prior_scale: float = 0.05,
     proxy_ct_tolerance: float = 0.15,
     num_steps: int = 30_000,
+    learning_rate: float = 0.001,
     use_piecewise_trend: bool = True,
     adstock_decay: float | None = None,
     auxiliary_metric_df: pd.DataFrame | None = None,
@@ -144,7 +145,7 @@ def _run_raven2_eletro(
         extra_effects=[(f"share_prior_{dim_name.replace(' ', '_')}", _csl, None)],
         inference_engine=MAPInferenceEngine(
             optimizer=CosineScheduleAdamWOptimizer(
-                init_value=0.001,
+                init_value=learning_rate,
                 decay_steps=num_steps,
                 weight_decay=1e-4,
             ),
@@ -191,6 +192,7 @@ def run_deep_dive_e1(
     upgrade: UpgradeResult,
     auxiliary_metric_dfs: dict[str, pd.DataFrame] | None = None,
     strategy: Literal["e1", "y_adj"] = "e1",
+    learning_rate: float = 0.001,
     verbose: bool = True,
 ) -> DDResult:
     """Run E1 or y_adj per dimension; collect into DDResult.
@@ -247,6 +249,7 @@ def run_deep_dive_e1(
             share_prior_scale=config.share_prior_scale,
             proxy_ct_tolerance=config.proxy_ct_tolerance,
             num_steps=config.num_steps,
+            learning_rate=learning_rate,
             verbose=verbose,
             auxiliary_metric_df=_aux,
         )

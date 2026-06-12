@@ -22,48 +22,83 @@ class UpgradeResult:
     y_actual: pd.Series | None = None  # observed KPI — required for y_adj strategy
 
 
-def load_upgrade(run_id: str, tracking_uri: str | None = None) -> UpgradeResult:
-    """Load a Stan upgrade run from MLflow.
+def load_upgrade(
+    run_id: str,
+    tracking_uri: str | None = None,
+    cache_dir: str | None = None,
+) -> UpgradeResult:
+    """Load UpgradeResult from export_data.parquet + input_data.parquet only.
 
-    Artifact path is 'mmm' (mammoth convention) — unwraps pyfunc → base model.
-    Contributions computed via mammoth Contribution class.
-    spend_df is initially empty; call load_breakdown_spend() afterward.
+    Downloads ~0.3 MB instead of the 768 MB python_model.pkl.
+    model=None (not needed by the deep dive pipeline).
+    Requires mammoth to have logged export_data.parquet with metric_types:
+      'Contribution Unadstocked' and 'Target Prediction'.
     """
     if tracking_uri:
         mlflow.set_tracking_uri(tracking_uri)
 
-    # Load the model: mlflow pyfunc wrapper → unwrap → base StanMMM
-    pyfunc_model = mlflow.pyfunc.load_model(f"runs:/{run_id}/mmm")
-    stan_model = pyfunc_model.unwrap_python_model().model
-
-    # Build contributions via mammoth
-    from mammoth.mmm.contribution.contribution import Contribution
-    contrib_df = Contribution(stan_model).get_contribution(unadstocked=True)
-
-    y_hat = contrib_df.sum(axis=1)
-
-    # Actual observed KPI — try common mammoth/Stan attribute names
-    y_actual: pd.Series | None = None
-    for attr in ("y", "target", "data"):
-        val = getattr(stan_model, attr, None)
-        if val is None:
-            continue
-        if isinstance(val, pd.Series):
-            y_actual = val.reindex(contrib_df.index)
-            break
-        if isinstance(val, dict) and "y" in val:
-            y_actual = pd.Series(val["y"], index=contrib_df.index)
-            break
-
-    # mmm_config from run params (set by mammoth when logging)
     client = mlflow.tracking.MlflowClient()
-    run = client.get_run(run_id)
-    mmm_config = dict(run.data.params)
+
+    dst = os.path.join(cache_dir, run_id) if cache_dir else None
+    if dst:
+        os.makedirs(dst, exist_ok=True)
+        cached = os.path.join(dst, "export_data.parquet")
+        if os.path.exists(cached):
+            print(f"[cache] loading from {dst}")
+            export_path = cached
+            input_path = os.path.join(dst, "input_data.parquet")
+        else:
+            import tempfile
+            _tmp = tempfile.mkdtemp()
+            export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
+            input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+            import shutil
+            shutil.copy(export_path, cached)
+            shutil.copy(input_path, os.path.join(dst, "input_data.parquet"))
+    else:
+        import tempfile
+        _tmp = tempfile.mkdtemp()
+        export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
+        input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+
+    export = pd.read_parquet(export_path)
+
+    # ── contrib_df: pivot Contribution Unadstocked ────────────────────────────
+    cu = export[export["metric_type"] == "Contribution Unadstocked"].copy()
+    cu["timestamp"] = pd.to_datetime(cu["timestamp"]).dt.to_period("W-MON").dt.start_time
+    contrib_df = (
+        cu.groupby(["timestamp", "variable_name"])["value"]
+        .sum()
+        .unstack("variable_name")
+        .fillna(0.0)
+    )
+    contrib_df.index = pd.DatetimeIndex(contrib_df.index).normalize()
+    contrib_df.index.name = None
+
+    # ── y_hat: soma de todas as contribuições (inclui $metric:intercept) ────────
+    y_hat = contrib_df.sum(axis=1).rename(None)
+
+    # ── y_actual: last numeric column of input_data (the KPI target) ─────────
+    # Positional alignment: input_data has the same number of weekly rows as
+    # contrib_df but timestamps may differ by timezone offset (BRT vs UTC),
+    # causing reindex by timestamp to produce NaN at edges.
+    inp = pd.read_parquet(input_path)
+    if "timestamp" in inp.columns:
+        inp = inp.sort_values("timestamp")
+    kpi_values = inp.iloc[:, -1].values
+    if len(kpi_values) != len(contrib_df):
+        raise ValueError(
+            f"input_data tem {len(kpi_values)} linhas mas contrib_df tem {len(contrib_df)}. "
+            "Alinhamento posicional requer mesmo número de semanas."
+        )
+    y_actual = pd.Series(kpi_values, index=contrib_df.index, name=None)
+
+    mmm_config = dict(client.get_run(run_id).data.params)
 
     return UpgradeResult(
-        model=stan_model,
+        model=None,
         contrib_df=contrib_df,
-        spend_df=pd.DataFrame(),   # populated by load_breakdown_spend()
+        spend_df=pd.DataFrame(),
         mmm_config=mmm_config,
         y_hat=y_hat,
         model_type="stan",
