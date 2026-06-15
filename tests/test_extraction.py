@@ -1,8 +1,12 @@
+import os
+import sys
+import tempfile
 import pandas as pd
-import sys, os
+import pytest
 from unittest.mock import patch, MagicMock
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
-from extraction import UpgradeResult, load_upgrade
+from extraction import UpgradeResult, load_upgrade_stan
 
 
 def test_upgrade_result_fields():
@@ -20,34 +24,38 @@ def test_upgrade_result_fields():
     assert ur.model is None
 
 
-def test_load_upgrade_with_mocks():
+def test_load_upgrade_stan_with_mocks():
     idx = pd.date_range("2023-01-02", periods=2, freq="W-MON")
-    contrib = pd.DataFrame({"chan_a": [10.0, 20.0], "chan_b": [5.0, 5.0]}, index=idx)
 
-    # fake pyfunc model that unwraps to a stan_model mock
-    fake_stan_model = MagicMock()
-    fake_pyfunc = MagicMock()
-    fake_pyfunc.unwrap_python_model.return_value.model = fake_stan_model
+    # Build fake export_data.parquet (Contribution Unadstocked rows)
+    export_rows = []
+    for ts, (a_val, b_val) in zip(idx, [(10.0, 5.0), (20.0, 5.0)]):
+        export_rows.append({"timestamp": ts, "variable_name": "chan_a", "value": a_val, "metric_type": "Contribution Unadstocked"})
+        export_rows.append({"timestamp": ts, "variable_name": "chan_b", "value": b_val, "metric_type": "Contribution Unadstocked"})
+    export_df = pd.DataFrame(export_rows)
 
-    # fake Contribution class
-    fake_contrib_instance = MagicMock()
-    fake_contrib_instance.get_contribution.return_value = contrib
-    FakeContribution = MagicMock(return_value=fake_contrib_instance)
+    # Build fake input_data.parquet (last column = KPI)
+    input_df = pd.DataFrame({"timestamp": idx, "other_col": [1.0, 2.0], "kpi": [100.0, 200.0]})
 
-    # fake MLflow client returning run params
-    fake_run = MagicMock()
-    fake_run.data.params = {"media_features": "chan_a,chan_b", "target": "kpi"}
-    MockClient = MagicMock()
-    MockClient.return_value.get_run.return_value = fake_run
+    with tempfile.TemporaryDirectory() as tmp:
+        export_path = os.path.join(tmp, "export_data.parquet")
+        input_path = os.path.join(tmp, "input_data.parquet")
+        export_df.to_parquet(export_path, index=False)
+        input_df.to_parquet(input_path, index=False)
 
-    with patch("mlflow.pyfunc.load_model", return_value=fake_pyfunc), \
-         patch("mlflow.tracking.MlflowClient", MockClient), \
-         patch("mammoth.mmm.contribution.contribution.Contribution", FakeContribution):
+        fake_run = MagicMock()
+        fake_run.data.params = {"media_features": "chan_a,chan_b", "target": "kpi"}
+        mock_client = MagicMock()
+        mock_client.return_value.download_artifacts.side_effect = [export_path, input_path]
+        mock_client.return_value.get_run.return_value = fake_run
 
-        result = load_upgrade("fake-run-id", tracking_uri="http://fake")
+        with patch("mlflow.tracking.MlflowClient", mock_client):
+            result = load_upgrade_stan("fake-run-id", tracking_uri="http://fake")
 
-    assert result.model is fake_stan_model
     assert list(result.contrib_df.columns) == ["chan_a", "chan_b"]
-    assert result.spend_df.empty                    # populated by load_breakdown_spend()
+    assert result.spend_df.empty
     assert abs(float(result.y_hat.iloc[0]) - 15.0) < 1e-6   # 10 + 5
     assert abs(float(result.y_hat.iloc[1]) - 25.0) < 1e-6   # 20 + 5
+    assert result.y_actual is not None
+    assert abs(float(result.y_actual.iloc[0]) - 100.0) < 1e-6
+    assert abs(float(result.y_actual.iloc[1]) - 200.0) < 1e-6

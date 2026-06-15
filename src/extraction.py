@@ -19,110 +19,126 @@ class UpgradeResult:
     mmm_config: dict                # {media_features, control_features, target, ...}
     y_hat: pd.Series                # fitted KPI values (sum of contribs)
     model_type: ModelType = "stan"  # "stan" | "meridian" | "raven"
+    y_actual: pd.Series | None = None  # observed KPI
 
 
-def load_upgrade(run_id: str, tracking_uri: str | None = None) -> UpgradeResult:
-    """Load a Stan upgrade run from MLflow.
+def _load_from_parquets(
+    run_id: str,
+    tracking_uri: str | None = None,
+    cache_dir: str | None = None,
+    contribution_metric_type: str = "Contribution Unadstocked",
+    model_type: ModelType = "stan",
+) -> UpgradeResult:
+    """Load UpgradeResult from export_data.parquet + input_data.parquet.
 
-    Artifact path is 'mmm' (mammoth convention) — unwraps pyfunc → base model.
-    Contributions computed via mammoth Contribution class.
-    spend_df is initially empty; call load_breakdown_spend() afterward.
+    cache_dir: if set, parquets are persisted under <cache_dir>/<run_id>/ and
+               reused on subsequent calls.
+    contribution_metric_type: metric_type row to use for contrib_df.
+        Stan: 'Contribution Unadstocked'  Meridian: 'Contribution'
     """
     if tracking_uri:
         mlflow.set_tracking_uri(tracking_uri)
 
-    # Load the model: mlflow pyfunc wrapper → unwrap → base StanMMM
-    pyfunc_model = mlflow.pyfunc.load_model(f"runs:/{run_id}/mmm")
-    stan_model = pyfunc_model.unwrap_python_model().model
-
-    # Build contributions via mammoth
-    from mammoth.mmm.contribution.contribution import Contribution
-    contrib_df = Contribution(stan_model).get_contribution(unadstocked=True)
-
-    y_hat = contrib_df.sum(axis=1)
-
-    # mmm_config from run params (set by mammoth when logging)
     client = mlflow.tracking.MlflowClient()
-    run = client.get_run(run_id)
-    mmm_config = dict(run.data.params)
 
-    return UpgradeResult(
-        model=stan_model,
-        contrib_df=contrib_df,
-        spend_df=pd.DataFrame(),   # populated by load_breakdown_spend()
-        mmm_config=mmm_config,
-        y_hat=y_hat,
-        model_type="stan",
+    if cache_dir:
+        dst = os.path.join(cache_dir, run_id)
+        os.makedirs(dst, exist_ok=True)
+        export_cached = os.path.join(dst, "export_data.parquet")
+        input_cached = os.path.join(dst, "input_data.parquet")
+        if os.path.exists(export_cached):
+            print(f"[cache] {dst}")
+            export_path, input_path = export_cached, input_cached
+        else:
+            import shutil, tempfile
+            _tmp = tempfile.mkdtemp()
+            export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
+            input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+            shutil.copy(export_path, export_cached)
+            shutil.copy(input_path, input_cached)
+    else:
+        import tempfile
+        _tmp = tempfile.mkdtemp()
+        export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
+        input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+
+    export = pd.read_parquet(export_path)
+
+    cu = export[export["metric_type"] == contribution_metric_type].copy()
+    cu["timestamp"] = pd.to_datetime(cu["timestamp"]).dt.to_period("W-MON").dt.start_time
+    contrib_df = (
+        cu.groupby(["timestamp", "variable_name"])["value"]
+        .sum()
+        .unstack("variable_name")
+        .fillna(0.0)
     )
-
-
-def _patch_meridian_model_context(inner: Any) -> None:
-    """Reconstruct _model_context for models saved with an older Meridian API.
-
-    Older Meridian serialized _input_data and _model_spec directly on the Meridian
-    object. Newer installed Meridian wraps them in ModelContext. This patch bridges
-    the gap so MeridianVisualizations.from_model() can work.
-    """
-    if hasattr(inner, "_model_context"):
-        return
-    if not (hasattr(inner, "_input_data") and hasattr(inner, "_model_spec")):
-        raise AttributeError(
-            "Meridian object missing '_model_context' and cannot reconstruct it: "
-            "neither '_input_data' nor '_model_spec' found."
-        )
-    from meridian.model.context import ModelContext
-    inner._model_context = ModelContext(
-        input_data=inner._input_data,
-        model_spec=inner._model_spec,
-    )
-
-
-def load_meridian_upgrade(run_id: str, tracking_uri: str | None = None) -> UpgradeResult:
-    """Load a Meridian upgrade run from MLflow.
-
-    Meridian uses channel names (not variable slugs) as contrib_df columns.
-    contrib_df will contain one column per media channel (e.g. "eletromidia", "tv").
-    The eletro_var in the client YAML must match a channel name here.
-    """
-    if tracking_uri:
-        mlflow.set_tracking_uri(tracking_uri)
-
-    pyfunc_model = mlflow.pyfunc.load_model(f"runs:/{run_id}/mmm")
-    meridian_mmm = pyfunc_model.unwrap_python_model().model  # MeridianMMM wrapper
-    meridian_model = meridian_mmm.model                      # inner Meridian object
-
-    _patch_meridian_model_context(meridian_model)
-
-    from mammoth.mmm.reports.meridian.visualizations import MeridianVisualizations
-    from mammoth.mmm.reports.meridian.report import (
-        get_pivoted_contributions,
-        create_incremental_outcome_dataframe,
-    )
-
-    visualizations = MeridianVisualizations.from_model(meridian_model)
-    pivoted = get_pivoted_contributions(visualizations, use_kpi=True, selected_geo=None)
-    contributions = create_incremental_outcome_dataframe(visualizations, pivoted)
-
-    _drop = [c for c in ["All Channels", "y_true", "y_pred", "baseline", "residual"]
-             if c in contributions.columns]
-    contrib_df = contributions.drop(columns=_drop)
-    if "time" in contrib_df.columns:
-        contrib_df = contrib_df.set_index("time")
-    contrib_df.index = pd.to_datetime(contrib_df.index).normalize()
+    contrib_df.index = pd.DatetimeIndex(contrib_df.index).normalize()
     contrib_df.index.name = None
 
-    y_hat = contrib_df.sum(axis=1)
+    # y_hat = sum of all contributions, including $metric:intercept
+    y_hat = contrib_df.sum(axis=1).rename(None)
 
-    client = mlflow.tracking.MlflowClient()
-    run = client.get_run(run_id)
-    mmm_config = dict(run.data.params)
+    # y_actual: positional alignment avoids timezone bucketing mismatches.
+    # Meridian export_data may include 1 extra forecast week at the end — trim it.
+    inp = pd.read_parquet(input_path)
+    if "timestamp" in inp.columns:
+        inp = inp.sort_values("timestamp")
+    kpi_values = inp.iloc[:, -1].values
+    n_inp, n_contrib = len(kpi_values), len(contrib_df)
+    if n_contrib == n_inp + 1:
+        contrib_df = contrib_df.iloc[:n_inp]
+        y_hat = contrib_df.sum(axis=1).rename(None)
+    elif n_contrib != n_inp:
+        raise ValueError(
+            f"input_data has {n_inp} rows but contrib_df has {n_contrib}. "
+            "Positional alignment requires the same number of weeks (tolerance: +1)."
+        )
+    y_actual = pd.Series(kpi_values, index=contrib_df.index, name=None)
+
+    mmm_config = dict(client.get_run(run_id).data.params)
 
     return UpgradeResult(
-        model=meridian_mmm,
+        model=None,
         contrib_df=contrib_df,
         spend_df=pd.DataFrame(),
         mmm_config=mmm_config,
         y_hat=y_hat,
+        model_type=model_type,
+        y_actual=y_actual,
+    )
+
+
+def load_upgrade_stan(
+    run_id: str,
+    tracking_uri: str | None = None,
+    cache_dir: str | None = None,
+) -> UpgradeResult:
+    """Load a Stan upgrade run from export_data.parquet + input_data.parquet."""
+    return _load_from_parquets(
+        run_id,
+        tracking_uri=tracking_uri,
+        cache_dir=cache_dir,
+        contribution_metric_type="Contribution Unadstocked",
+        model_type="stan",
+    )
+
+
+def load_meridian_upgrade(
+    run_id: str,
+    tracking_uri: str | None = None,
+    cache_dir: str | None = None,
+) -> UpgradeResult:
+    """Load a Meridian upgrade run from export_data.parquet + input_data.parquet.
+
+    Meridian logs 'Contribution' (not 'Contribution Unadstocked') in export_data.
+    cache_dir: if set, parquets are persisted under <cache_dir>/<run_id>/ and
+               reused on subsequent calls.
+    """
+    return _load_from_parquets(
+        run_id,
+        tracking_uri=tracking_uri,
+        cache_dir=cache_dir,
+        contribution_metric_type="Contribution",
         model_type="meridian",
     )
 
@@ -148,7 +164,7 @@ def load_upgrade_auto(
 ) -> UpgradeResult:
     """Dispatch to the correct loader based on model_type."""
     if model_type == "stan":
-        return load_upgrade(run_id, tracking_uri=tracking_uri)
+        return load_upgrade_stan(run_id, tracking_uri=tracking_uri)
     if model_type == "meridian":
         return load_meridian_upgrade(run_id, tracking_uri=tracking_uri)
     if model_type == "raven":
