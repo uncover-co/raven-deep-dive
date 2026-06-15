@@ -233,7 +233,7 @@ clients:
     output_subdir: novo_cliente
 ```
 
-### 3. Para um novo veículo (não-Eletromídia)
+### 3. Para um novo veículo
 
 Adicionar entrada em `data/vehicle_specs.yaml` com `breakdowns`, `hierarchy` e `rollups`. O código Python não precisa de alteração.
 
@@ -245,7 +245,7 @@ Adicionar entrada em `data/vehicle_specs.yaml` com `breakdowns`, `hierarchy` e `
 
 | Arquivo | Conteúdo |
 |---|---|
-| `outputs/{cliente}/{cliente}_shares_e1.csv` | dim, item, contrib_share, spend_share, proxy_ratio, csl_max_dev |
+| `outputs/{cliente}/{cliente}_shares.csv` | dim, item, contrib_share, spend_share, proxy_ratio, csl_max_dev |
 | `outputs/{cliente}/{cliente}_roas_index.csv` | dim, item, roas_index (contrib_share / spend_share) |
 | `outputs/{cliente}/{cliente}_contributions.html` | Barra agrupada: share de contribuição vs. share de spend |
 | `outputs/{cliente}/{cliente}_roas_index.html` | Heatmap ROAS index por dimensão × sub-canal |
