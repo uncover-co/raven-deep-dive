@@ -1,6 +1,5 @@
 from __future__ import annotations
 import os
-import re
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
@@ -89,43 +88,6 @@ def _build_stan_vars(
     return result
 
 
-def _infer_media_var(columns, vehicle_spec: dict, brand: str) -> str:
-    """Heuristically find the aggregate media variable in contrib_df columns.
-
-    Searches brand-scoped patterns first, then vehicle_slug, then common OOH names.
-    For non-OOH vehicles, set media_var explicitly in the client YAML.
-    """
-    vslug = vehicle_spec.get("vehicle_slug", "")
-    patterns = [
-        *(
-            [
-                f"{re.escape(vslug)}.*{re.escape(brand)}",
-                f"{re.escape(brand)}.*{re.escape(vslug)}",
-            ]
-            if vslug else []
-        ),
-        f"eletro.*{re.escape(brand)}",
-        f"ooh.*{re.escape(brand)}",
-        f"{re.escape(brand)}.*eletro",
-        f"{re.escape(brand)}.*ooh",
-        *(([vslug] if vslug else [])),
-        "eletromidia",
-        "ooh_macro",
-        "eletro_total",
-    ]
-    for pat in patterns:
-        for col in columns:
-            if re.search(pat, col, flags=re.IGNORECASE):
-                return col
-
-    raise ValueError(
-        "Cannot infer media_var from contrib_df columns. "
-        "Set 'media_var' (or legacy 'eletro_var') in the client YAML, "
-        "or pass media_var_override=. "
-        f"Available columns (first 10): {list(columns)[:10]}"
-    )
-
-
 def build_config(
     upgrade: Any,
     specs_path: str,
@@ -134,9 +96,9 @@ def build_config(
     """Build DeepDiveConfig from client YAML + UpgradeResult.
 
     Args:
-        upgrade: UpgradeResult with contrib_df (used to infer media_var if not set).
+        upgrade: UpgradeResult with contrib_df (used to validate media_var).
         specs_path: path to the client YAML (e.g. deepdive/configs/bradesco_eletro.yaml).
-        media_var_override: explicit aggregate channel column name; skips inference.
+        media_var_override: explicit aggregate channel column name; overrides YAML value.
     """
     cfg = _load_yaml(specs_path)
     brand = cfg.get("brand", "")
@@ -153,12 +115,12 @@ def build_config(
     vars_per_dim = _build_stan_vars(vehicle_spec, brand, dims_override)
     dims = list(vars_per_dim.keys())
 
-    if media_var_override:
-        media_var = media_var_override
-    else:
-        media_var = (
-            cfg.get("media_var")
-            or _infer_media_var(upgrade.contrib_df.columns, vehicle_spec, brand)
+    media_var = media_var_override or cfg.get("media_var")
+    if not media_var:
+        raise ValueError(
+            f"'media_var' not set in {specs_path}. "
+            "Add 'media_var: <column_name>' matching an exact column in contrib_df. "
+            f"Available columns (first 10): {list(upgrade.contrib_df.columns)[:10]}"
         )
 
     return DeepDiveConfig(
@@ -172,7 +134,3 @@ def build_config(
         num_steps=cfg.get("num_steps", 30_000),
         vehicle_spec=vehicle_spec,
     )
-
-
-# Backward-compat alias — notebooks still import build_eletro_config
-build_eletro_config = build_config

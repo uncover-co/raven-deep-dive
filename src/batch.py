@@ -18,10 +18,10 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from config import DeepDiveConfig, build_config, build_eletro_config
+from config import DeepDiveConfig, build_config
 from diagnostics import run_diagnostics
 from extraction import UpgradeResult, load_upgrade_auto, load_breakdown_spend
-from pipeline import DDResult, run_deep_dive_e1
+from pipeline import DDResult, run_deep_dive
 from report import generate_report
 
 DEFAULT_MLFLOW_URI = "https://mlflow-dev.cloud.uncover.co"
@@ -92,7 +92,7 @@ def run_single_client(
 
         config, diag = run_diagnostics(config, upgrade)
 
-        result = run_deep_dive_e1(config, upgrade, verbose=verbose)
+        result = run_deep_dive(config, upgrade, verbose=verbose)
 
         out_dir = os.path.join(output_base_dir, client_cfg.get("output_subdir", client_name))
         generate_report(result, output_dir=out_dir, client_name=client_name)
