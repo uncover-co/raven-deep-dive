@@ -19,7 +19,7 @@ def generate_report(
     prefix = f"{client_name}_" if client_name else ""
     paths: dict[str, str] = {}
 
-    # ── shares_e1.csv ─────────────────────────────────────────────────────────
+    # ── shares.csv ───────────────────────────────────────────────────────────
     shares_rows = []
     for dim in result.config.dims:
         sh_m = result.shares_model.get(dim, pd.Series(dtype=float))
@@ -36,7 +36,7 @@ def generate_report(
                 "csl_max_dev": csl_d,
             })
     shares_df = pd.DataFrame(shares_rows)
-    csv_shares = os.path.join(output_dir, f"{prefix}shares_e1.csv")
+    csv_shares = os.path.join(output_dir, f"{prefix}shares.csv")
     shares_df.to_csv(csv_shares, index=False)
     paths["csv_shares"] = csv_shares
 
