@@ -27,7 +27,7 @@ deepdive/
 │   ├── config.py                 # DeepDiveConfig + build_config() — parse YAML + UpgradeResult
 │   ├── extraction.py             # load_upgrade_auto() — Stan, Meridian, Raven via MLflow
 │   ├── diagnostics.py            # run_diagnostics() — filtra variáveis, cria __outros__
-│   ├── pipeline.py               # run_deep_dive_e1() — orquestrador Deep Dive Raven por dimensão
+│   ├── pipeline.py               # run_deep_dive() — orquestrador Deep Dive Raven por dimensão
 │   ├── plots.py                  # Plotly dark theme + analyze_deepdive/analyze_batch/analyze_trees
 │   ├── report.py                 # generate_report() — CSVs + HTMLs por cliente
 │   ├── batch.py                  # run_deep_dive_batch() + consolidate_results() — multi-cliente
@@ -43,8 +43,9 @@ deepdive/
 ├── data/
 │   └── vehicle_specs.yaml        # Hierarquias, slugs e rollups por veículo
 ├── notebooks/
-│   ├── deep_dive_eletro.ipynb    # Pipeline single-client
-│   └── deep_dive_batch.ipynb     # Pipeline multi-cliente + meta-análise
+│   ├── deep_dive_eletro.ipynb         # Pipeline single-client
+│   ├── deep_dive_batch.ipynb          # Pipeline multi-cliente + meta-análise
+│   └── validacao_prior_auxiliar.ipynb # Benchmark metodológico: prior auxiliar de medição
 ├── benchmarks/
 │   └── share_recovery_benchmark.py
 └── outputs/
@@ -127,7 +128,7 @@ Para adicionar um novo veículo com hierarquia diferente, só alterar o YAML —
 
 ### H1 — Prior Auxiliar Melhora Recuperação de Shares ✅
 
-Notebook de teste: `deep_dive_eletro.ipynb`: Benchmark sintético com 40 cenários (K=4 sub-canais, T=52 semanas, `share_prior_scale` ∈ {0.001, 0.005, 0.01, 0.05}, `σ_meas` ∈ {0, 0.05, 0.1, 0.2}):
+Notebook de teste: `validacao_prior_auxiliar.ipynb`: Benchmark sintético com 40 cenários (K=4 sub-canais, T=52 semanas, `share_prior_scale` ∈ {0.001, 0.005, 0.01, 0.05}, `σ_meas` ∈ {0, 0.05, 0.1, 0.2}):
 
 - Sem prior auxiliar (baseline spend): MAE ≈ 0.05–0.07 (`scale=0.005`)
 - Com brand study perfeito (`σ_meas=0`): MAE ≈ 0.03 → menor variância e estimativas mais concentradas
@@ -186,10 +187,10 @@ Isso garante que variáveis com contribuições maiores tenham prior mais rígid
 ### Single-Client (`deep_dive_eletro.ipynb`)
 
 ```python
-upgrade   = load_upgrade_auto(run_id, workspace, mlflow_uri, model_type)
+upgrade   = load_upgrade_stan(run_id, tracking_uri=mlflow_uri)  # ou load_meridian_upgrade
 config    = build_config(upgrade, specs_path="configs/bradesco_eletro.yaml")
 config, _ = run_diagnostics(config, upgrade)   # filtra variáveis, cria __outros__
-result    = run_deep_dive_e1(config, upgrade)  # Deep Dive Raven por dimensão
+result    = run_deep_dive(config, upgrade)      # Deep Dive Raven por dimensão
 _         = analyze_deepdive(result)           # tabelas ASCII + plots
             generate_report(result, output_dir)
 ```
