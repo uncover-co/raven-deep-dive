@@ -1,20 +1,20 @@
 dim,item,roas_index
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:abrigos-porto-alegre,0.4836866557817058
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:abrigos-sao-paulo,0.3977708099063124
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:cptm,1.657012209409421
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:edificios-comerciais,1.8541278132101384
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:edificios-residenciais,1.8341449152780755
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:mubs-festivais-e-eventos,0.051555998321077295
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:relogios-recife,1.239944926512193
-Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:relogios-salvador,2.1290739260425666
-Ambiente,__outros__ambiente,0.3375355833389135
-Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:porto-alegre,2.1644941408439005
-Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:recife,1.5823585481013933
-Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:rio-de-janeiro,0.9605084663293163
-Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:salvador,0.8317560000959755
-Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:sao-paulo,0.8587431261885035
-Praca,__outros__praca,0.5146383692702263
-Midia,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:midia:digital,1.1403258278362434
-Midia,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:midia:estatico,0.044408674560144135
-Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:modelo-de-planejamento:nao-programatica,1.0903300500766404
-Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:modelo-de-planejamento:programatica,0.9013048841223783
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:abrigos-porto-alegre,0.6971897297678813
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:abrigos-sao-paulo,0.04066021038566588
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:cptm,1.8654871241525324
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:edificios-comerciais,2.1232166035590545
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:edificios-residenciais,1.4755096012394198
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:mubs-festivais-e-eventos,0.010382735862687757
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:relogios-recife,1.758924572290042
+Ambiente,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:ambiente:relogios-salvador,2.807100800489574
+Ambiente,__outros__ambiente,0.32963758960600603
+Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:porto-alegre,0.17605591958002537
+Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:recife,2.7858430716463074
+Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:rio-de-janeiro,1.2418813816118417
+Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:salvador,0.8110654649077141
+Praca,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:praca:sao-paulo,0.9841296748217598
+Praca,__outros__praca,0.23887054755655263
+Midia,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:midia:digital,1.0360631772864612
+Midia,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:midia:estatico,0.7546609259580397
+Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:modelo-de-planejamento:nao-programatica,1.0976910772204485
+Modelo de Planejamento,$metric:investments$vehicle:eletromidia$category:brand:bradesco$category:modelo-de-planejamento:programatica,0.8936078263246081
