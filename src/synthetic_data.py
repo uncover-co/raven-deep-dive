@@ -1,4 +1,4 @@
-"""Semi-synthetic data generator for Deep Dive E1 validation.
+"""Semi-synthetic data generator for Deep Dive validation.
 
 Uses real spend patterns with synthetic Hill parameters to create
 ground-truth contribution breakdowns for controlled methodology evaluation.
@@ -16,7 +16,7 @@ class SyntheticDimension:
     spend_df: pd.DataFrame          # raw spend (T x K), original index
     hill_params: pd.DataFrame       # known θ_k: columns me/hm/sl, index=variaveis
     contributions: pd.DataFrame     # synthetic c_kt (T x K), same index as spend_df
-    eletro_contrib: pd.Series       # synthetic C_t (T,), same index as spend_df
+    media_dd_contrib: pd.Series       # synthetic C_t (T,), same index as spend_df
     true_shares: pd.Series          # σ_k^true (K,), index=variaveis, sums to 1
     col_maxes: pd.Series            # max spend per channel (K,), index=variaveis
 
@@ -81,11 +81,11 @@ def generate_synthetic_dim(
 
     contributions = pd.DataFrame(contribs_data, index=spend_df.index)
 
-    # eletro_contrib = sum_k c_kt * (1 + N(0, noise_sigma)) clipped >= 0
+    # media_dd_contrib = sum_k c_kt * (1 + N(0, noise_sigma)) clipped >= 0
     noise = rng.normal(0.0, noise_sigma, size=len(spend_df))
     raw_sum = contributions.sum(axis=1).values
-    eletro_vals = np.clip(raw_sum * (1.0 + noise), 0, None)
-    eletro_contrib = pd.Series(eletro_vals, index=spend_df.index, name="eletro")
+    channel_vals = np.clip(raw_sum * (1.0 + noise), 0, None)
+    media_dd_contrib = pd.Series(channel_vals, index=spend_df.index, name="channel")
 
     # true_shares = contributions.sum(axis=0) / contributions.sum().sum()
     total_per_channel = contributions.sum(axis=0)
@@ -101,7 +101,7 @@ def generate_synthetic_dim(
         spend_df=spend_df.copy(),
         hill_params=params_df,
         contributions=contributions,
-        eletro_contrib=eletro_contrib,
+        media_dd_contrib=media_dd_contrib,
         true_shares=true_shares,
         col_maxes=col_maxes,
     )
@@ -121,7 +121,7 @@ def simulate_measurement_prior(
     ŝ = softmax(log(true_shares) + N(0, sigma)).
     With sigma=0: ŝ = true_shares (deterministic).
 
-    index: optional DatetimeIndex — MUST match the y2 index used in _run_raven2_eletro
+    index: optional DatetimeIndex — MUST match the y2 index used in _run_raven_dim
            so that auxiliary_metric_df.reindex(y2.index) aligns correctly.
            If None, uses RangeIndex — caller is responsible for alignment.
     """

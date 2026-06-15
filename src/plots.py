@@ -98,7 +98,7 @@ def plot_weekly(result, dim: str) -> go.Figure:
             line=dict(width=0),
         ))
 
-    ct = _align_to(result.eletro_contrib, contribs.index)
+    ct = _align_to(result.media_dd_contrib, contribs.index)
     fig.add_trace(go.Scatter(
         x=ct.index, y=ct.values,
         name="C_t total (Stan)",
@@ -229,7 +229,7 @@ def _print_breakdown_summary(result, dim: str) -> None:
     contribs = result.contribs.get(dim)
     if contribs is None:
         return
-    anchor = _align_to(result.eletro_contrib, contribs.index)
+    anchor = _align_to(result.media_dd_contrib, contribs.index)
     total_anchor = float(anchor.sum())
     total_dim = float(contribs.sum(axis=1).sum())
     proxy_r = result.proxy_ratios.get(dim, float("nan"))
@@ -261,7 +261,7 @@ def plot_breakdown_total(result, dim: str) -> go.Figure:
     if contribs is None:
         raise ValueError(f"dim '{dim}' not in result.contribs. Available: {list(result.contribs)}")
 
-    anchor = _align_to(result.eletro_contrib, contribs.index)
+    anchor = _align_to(result.media_dd_contrib, contribs.index)
     total_anchor = float(anchor.sum())
     totals = contribs.sum()
 

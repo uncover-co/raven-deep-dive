@@ -60,7 +60,7 @@ def test_generate_synthetic_dim():
 
     assert isinstance(syn, SyntheticDimension)
     assert syn.contributions.shape == (26, 3)
-    assert syn.eletro_contrib.shape == (26,)
+    assert syn.media_dd_contrib.shape == (26,)
     assert list(syn.contributions.columns) == ["v1", "v2", "v3"]
     assert list(syn.hill_params.index) == ["v1", "v2", "v3"]
     assert all(c in syn.hill_params.columns for c in ["me", "hm", "sl"])
@@ -69,15 +69,15 @@ def test_generate_synthetic_dim():
     assert syn.true_shares.sum() == pytest.approx(1.0, abs=1e-6)
     assert (syn.true_shares > 0).all()
 
-    # eletro_contrib ≈ contributions.sum(axis=1) within noise tolerance
+    # media_dd_contrib ≈ contributions.sum(axis=1) within noise tolerance
     rel_err = (
-        (syn.eletro_contrib - syn.contributions.sum(axis=1)).abs()
-        / (syn.eletro_contrib.abs() + 1e-12)
+        (syn.media_dd_contrib - syn.contributions.sum(axis=1)).abs()
+        / (syn.media_dd_contrib.abs() + 1e-12)
     )
     assert rel_err.max() < 0.15, f"noise too large: {rel_err.max():.4f}"
 
-    # eletro_contrib non-negative
-    assert (syn.eletro_contrib >= 0).all()
+    # media_dd_contrib non-negative
+    assert (syn.media_dd_contrib >= 0).all()
 
     # custom hill_params respected
     params = {"v1": {"me": 0.1, "hm": 0.3, "sl": 1.0},
@@ -122,17 +122,17 @@ def test_simulate_measurement_prior():
 # ── Test 4: pipeline accepts auxiliary_metric_df params ──────────────────────
 
 def test_pipeline_accepts_auxiliary_df():
-    from pipeline import _run_raven2_eletro, run_deep_dive_e1
+    from pipeline import _run_raven_dim, run_deep_dive
 
-    sig_run = inspect.signature(_run_raven2_eletro)
+    sig_run = inspect.signature(_run_raven_dim)
     assert "auxiliary_metric_df" in sig_run.parameters, (
-        "_run_raven2_eletro missing auxiliary_metric_df param"
+        "_run_raven_dim missing auxiliary_metric_df param"
     )
     assert sig_run.parameters["auxiliary_metric_df"].default is None
 
-    sig_e1 = inspect.signature(run_deep_dive_e1)
+    sig_e1 = inspect.signature(run_deep_dive)
     assert "auxiliary_metric_dfs" in sig_e1.parameters, (
-        "run_deep_dive_e1 missing auxiliary_metric_dfs param"
+        "run_deep_dive missing auxiliary_metric_dfs param"
     )
     assert sig_e1.parameters["auxiliary_metric_dfs"].default is None
 
@@ -147,7 +147,7 @@ def test_share_recovery_integration():
     perfect-prior runs to produce shares within 0.40 MAE of ground truth.
     """
     import jax
-    from pipeline import _run_raven2_eletro
+    from pipeline import _run_raven_dim
 
     spend_df = _small_spend_df(T=26, K=3, seed=99)
     syn = generate_synthetic_dim("Praca", spend_df, rng_seed=42)
@@ -155,7 +155,7 @@ def test_share_recovery_integration():
     common_kwargs = dict(
         dim_name="Praca",
         features_df=syn.spend_df,
-        eletro_contrib=syn.eletro_contrib,
+        media_dd_contrib=syn.media_dd_contrib,
         share_prior_scale=0.05,
         proxy_ct_tolerance=0.15,
         num_steps=500,
@@ -163,13 +163,13 @@ def test_share_recovery_integration():
     )
 
     # baseline: spend-based CSL (no auxiliary prior)
-    r_baseline = _run_raven2_eletro(**common_kwargs)
+    r_baseline = _run_raven_dim(**common_kwargs)
 
     # perfect measurement prior (sigma=0 → exact true shares)
     aux_perfect = simulate_measurement_prior(
         syn.true_shares, n_obs=len(spend_df), sigma=0.0, index=spend_df.index
     )
-    r_perfect = _run_raven2_eletro(**common_kwargs, auxiliary_metric_df=aux_perfect)
+    r_perfect = _run_raven_dim(**common_kwargs, auxiliary_metric_df=aux_perfect)
 
     mae_baseline = float((r_baseline["shares_model"] - syn.true_shares).abs().mean())
     mae_perfect = float((r_perfect["shares_model"] - syn.true_shares).abs().mean())

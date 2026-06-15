@@ -23,7 +23,7 @@ class DDResult:
     shares_spend: dict[str, pd.Series]
     proxy_ratios: dict[str, float]
     csl_devs: dict[str, float]
-    eletro_contrib: pd.Series
+    media_dd_contrib: pd.Series
     config: DeepDiveConfig
     features_raw: dict[str, pd.DataFrame] = field(default_factory=dict)
     col_maxes: dict[str, pd.Series] = field(default_factory=dict)
@@ -57,10 +57,10 @@ def _apply_adstock_df(df: pd.DataFrame, decay: float) -> pd.DataFrame:
     return result
 
 
-def _run_raven2_eletro(
+def _run_raven_dim(
     dim_name: str,
     features_df: pd.DataFrame,
-    eletro_contrib: pd.Series,
+    media_dd_contrib: pd.Series,
     share_prior_scale: float = 0.05,
     proxy_ct_tolerance: float = 0.15,
     num_steps: int = 30_000,
@@ -69,31 +69,31 @@ def _run_raven2_eletro(
     auxiliary_metric_df: pd.DataFrame | None = None,
     verbose: bool = True,
 ) -> dict:
-    """Raven per dimension.
-    Approach: raw features normalized per-column → Hill in [0,1].
-    Target = eletro_contrib (not full KPI) → clean identification.
+    """Fit Raven Hill model for one dimension.
+    Features normalized per-column → Hill in [0,1].
+    Target = media_dd_contrib (channel contribution, not full KPI).
     """
-    eletro_contrib = eletro_contrib.copy()
-    eletro_contrib.index = _wmon_norm(eletro_contrib.index)
+    media_dd_contrib = media_dd_contrib.copy()
+    media_dd_contrib.index = _wmon_norm(media_dd_contrib.index)
     features_df = features_df.copy()
     features_df.index = _wmon_norm(features_df.index)
 
-    if eletro_contrib.sum() == 0:
-        raise ValueError(f"[{dim_name}] eletro_contrib is all zeros.")
-    _first_active = (eletro_contrib > 0).idxmax()
-    n_dropped = int((eletro_contrib.index < _first_active).sum())
-    eletro_contrib = eletro_contrib.loc[_first_active:]
+    if media_dd_contrib.sum() == 0:
+        raise ValueError(f"[{dim_name}] media_dd_contrib is all zeros.")
+    _first_active = (media_dd_contrib > 0).idxmax()
+    n_dropped = int((media_dd_contrib.index < _first_active).sum())
+    media_dd_contrib = media_dd_contrib.loc[_first_active:]
 
     if verbose:
-        _nz = int((eletro_contrib == 0).sum())
-        print(f"  [{dim_name}] {eletro_contrib.index[0].date()} → "
-              f"{eletro_contrib.index[-1].date()} "
-              f"({len(eletro_contrib)}w, {n_dropped} dropped, {_nz} internal zeros)")
+        _nz = int((media_dd_contrib == 0).sum())
+        print(f"  [{dim_name}] {media_dd_contrib.index[0].date()} → "
+              f"{media_dd_contrib.index[-1].date()} "
+              f"({len(media_dd_contrib)}w, {n_dropped} dropped, {_nz} internal zeros)")
 
     variaveis = list(features_df.columns)
-    y2 = eletro_contrib.to_frame(name="eletro")
+    y2 = media_dd_contrib.to_frame(name="channel")
 
-    features_raw = features_df.reindex(eletro_contrib.index, fill_value=0)
+    features_raw = features_df.reindex(media_dd_contrib.index, fill_value=0)
     if adstock_decay is not None and adstock_decay > 0:
         features_raw = _apply_adstock_df(features_raw, adstock_decay)
 
@@ -102,7 +102,7 @@ def _run_raven2_eletro(
 
     _y2_max = float(y2.values.max())
     _proxy_col = f"anchor_{dim_name.replace(' ', '_')}"
-    _ct = eletro_contrib.reindex(y2.index, fill_value=0)
+    _ct = media_dd_contrib.reindex(y2.index, fill_value=0)
     _ct_nz = _ct[_ct > 0]
 
     X2 = features_norm.copy()
@@ -186,20 +186,20 @@ def _run_raven2_eletro(
     }
 
 
-def run_deep_dive_e1(
+def run_deep_dive(
     config: DeepDiveConfig,
     upgrade: UpgradeResult,
     auxiliary_metric_dfs: dict[str, pd.DataFrame] | None = None,
     verbose: bool = True,
 ) -> DDResult:
-    """Run E1 per dimension; collect into DDResult."""
+    """Run deep dive per dimension; collect into DDResult."""
     if config.media_var not in upgrade.contrib_df.columns:
         available = list(upgrade.contrib_df.columns)[:10]
         raise KeyError(
             f"media_var='{config.media_var}' not in contrib_df. "
             f"Available columns (first 10): {available}"
         )
-    eletro_contrib = upgrade.contrib_df[config.media_var]
+    media_dd_contrib = upgrade.contrib_df[config.media_var]
 
     models, contribs, shares_model, shares_spend = {}, {}, {}, {}
     proxy_ratios, csl_devs, features_raw_all, col_maxes_all = {}, {}, {}, {}
@@ -216,10 +216,10 @@ def run_deep_dive_e1(
 
         print(f"▶ [{dim}]  ({len(available)} vars)")
         _aux = (auxiliary_metric_dfs or {}).get(dim)
-        r = _run_raven2_eletro(
+        r = _run_raven_dim(
             dim_name=dim,
             features_df=upgrade.spend_df[available].copy(),
-            eletro_contrib=eletro_contrib,
+            media_dd_contrib=media_dd_contrib,
             share_prior_scale=config.share_prior_scale,
             proxy_ct_tolerance=config.proxy_ct_tolerance,
             num_steps=config.num_steps,
@@ -243,7 +243,7 @@ def run_deep_dive_e1(
         shares_spend=shares_spend,
         proxy_ratios=proxy_ratios,
         csl_devs=csl_devs,
-        eletro_contrib=eletro_contrib,
+        media_dd_contrib=media_dd_contrib,
         config=config,
         features_raw=features_raw_all,
         col_maxes=col_maxes_all,
@@ -258,8 +258,6 @@ def extract_hill_params(
     y_max: float | None = None,
 ) -> pd.DataFrame:
     """Extract MAP Hill parameters per variable.
-
-    Source: Deep_Dive_Eletromidia_Raven2.ipynb cell 34 — extract_hill_params.
     half_max_abs = half_max_norm * col_maxes[v]  → BRL/semana.
     """
     import jax.numpy as jnp
