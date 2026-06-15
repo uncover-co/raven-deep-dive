@@ -1,49 +1,18 @@
 """ContributionShareLikelihood — soft prior on contribution shares vs metric shares.
 
-Design rationale
-----------------
-Volume metrics (impressions, clicks, video-views) are always correlated with spend
-because media is bought: more spend → more volume. Using them directly as proxy
-targets does not add independent information beyond spend.
+Constrains time-aggregated contribution shares to match metric shares:
 
-Efficiency metrics (CTR = clicks/impressions, VTR = views/impressions) capture
-*quality* — how well each campaign type resonates — independently of spend level.
+    actual_shares ~ Normal(expected_shares, scale)
 
-This effect constrains contribution shares to match metric shares:
+Used alongside an `exact` proxy anchor on C_t:
+  1. exact anchor pins Σ contrib_j ≈ C_t  (absolute scale from base MMM)
+  2. ContributionShareLikelihood pins shares to metric shares
 
-    actual_share_i = Σ_t contrib_i(t) / Σ_t Σ_j contrib_j(t)
-    expected_share_i = Σ_t metric_i(t) / Σ_t Σ_j metric_j(t)
+Together: each contribution is proportional to the metric share AND the total
+sums to C_t — without a learnable scale factor (avoids k-mismatch → NaN losses).
 
-    actual_shares ~ Normal(expected_shares, scale)          (vector, N items)
-
-This is the share-space equivalent of a log-ratio constraint:
-
-    log(contrib_i / contrib_ref) ≈ log(metric_i / metric_ref)
-
-Without requiring a learnable scale factor k (as `proportional` proxy does),
-so it does not suffer from k initialization mismatch → NaN losses.
-
-Integration
------------
-Intended to be used alongside the `exact` proxy anchor on C_t:
-  1. exact anchor: Σ contrib_j ≈ C_t  (total constrained to Raven 1 output)
-  2. ContributionShareLikelihood: shares constrained to match metric shares
-
-Together: contributions are proportional to metric shares AND sum to C_t.
-This is equivalent to the per-item exact proxy approach but expressed purely
-in share space, decoupled from the absolute scale of C_t.
-
-The `scale` parameter plays the role of ε in the BreakdownModel formulation:
-  - small scale (e.g. 0.01): shares tightly follow metrics
-  - large scale (e.g. 0.10): model free to deviate based on spend patterns
-
-Implementation note
--------------------
-Metrics are passed directly via ``metric_df`` in ``__init__`` rather than being
-read from X. This avoids Prophetverse's broadcast-by-column behavior when the
-effect is passed via ``extra_effects``, which would otherwise deliver one column
-at a time instead of the full (T, N) matrix needed to compute shares.
-``requires_X=False`` signals to Prophetverse that this effect claims no X columns.
+Metrics are injected via ``metric_df`` at construction (not read from X) to avoid
+Prophetverse's per-column broadcast when added via ``extra_effects``.
 """
 
 from typing import Any, Dict, List

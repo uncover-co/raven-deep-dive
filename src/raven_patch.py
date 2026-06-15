@@ -2,32 +2,31 @@
 Patch local sobre mmmverse.models.raven.Raven — extensões para o pipeline de Deep Dive.
 
 ════════════════════════════════════════════════════════════════════════════════
-1. NORMALIZAÇÃO DOS PROXIES POR y2_max (E2 / multi-proxy)
+1. NORMALIZAÇÃO DO PROXY ÂNCORA POR max(target)
 ════════════════════════════════════════════════════════════════════════════════
 
 Problema original
 -----------------
 Com target_scale="max" o Raven escala internamente y → y / max(y). Todos os
-efeitos Hill produzem valores em unidades de y_scaled = y / y2_max. O canal de
-proxy precisa estar na mesma escala para que CoupledExactLikelihood compare
-grandezas compatíveis:
+efeitos Hill produzem valores em unidades de y_scaled = y / max(y). A coluna de
+proxy (âncora) precisa estar na mesma escala para que CoupledExactLikelihood
+compare grandezas compatíveis:
 
     Normal(sum_Hills_t, prior_scale).log_prob(proxy_col_t)
 
-Se proxy_col_v é normalizado pelo seu próprio máximo (→ max = 1) mas o Hill
-correspondente opera em unidades de y_scaled (≈ c_v / y2_max ≈ 0.002 para um
-canal que representa 0.2 % do KPI), o mismatch de escala é da ordem de
-1 / 0.002 = 500×. Isso gera gradientes explosivos → NaN nas primeiras iterações.
+Se proxy_col é normalizado pelo seu próprio máximo (→ max = 1) mas os Hills
+operam em unidades de y_scaled (≈ c_v / max(y) ≈ 0.002 para um canal que
+representa 0.2 % do target), o mismatch de escala é da ordem de 500×.
+Isso gera gradientes explosivos → NaN nas primeiras iterações.
 
 Solução
 -------
-Normalizar TODOS os proxies por y2_max = max(KPI no período):
+Normalizar o proxy por max(target):
 
-    proxy_col_v_t = c_v_t / y2_max
+    proxy_col_t = anchor_t / max(target)
 
-Hills em y_scaled e proxies ficam na mesma escala por construção. Qualquer
-normalização consistente funciona — y2_max é a escolha natural porque é o fator
-que o próprio Raven usa internamente via target_scale="max".
+Hills e proxy ficam na mesma escala por construção. max(target) é a escolha
+natural porque é o fator que o próprio Raven usa internamente via target_scale="max".
 
 ════════════════════════════════════════════════════════════════════════════════
 2. PER-VARIABLE HILL PRIOR DICTS
