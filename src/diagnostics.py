@@ -17,7 +17,7 @@ class DiagnosisResult:
 def run_diagnostics(
     config: DeepDiveConfig,
     upgrade: UpgradeResult,
-    min_spend_share: float = 0.05,
+    min_spend_share: float = 0.02,
     hhi_threshold: float = 0.85,
     min_active_weeks: int = 2,
 ) -> tuple[DeepDiveConfig, DiagnosisResult]:
