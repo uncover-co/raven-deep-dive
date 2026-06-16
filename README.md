@@ -280,13 +280,13 @@ Benchmark: `validacao_prior_auxiliar.ipynb` — 40 cenários (K=4, T=52, `scale`
 
 Sem normalização, o proxy (escala absoluta de `C_t`) domina o gradiente e o otimizador diverge. `X_proxy = C_t / max(C_t)` alinha a escala com as saídas Hill.
 
-### H3 — Sigma do Proxy Auto-calibrado por Sub-canal ✅
+### H3 — Sigma do Proxy Auto-calibrado por Dimensão ✅
 
 ```
-sigma_proxy_v = tolerance × mean(C_t_v[C_t_v > 0]) / max(C_t_v)
+proxy_scale = tolerance × mean(C_t[C_t > 0]) / max(C_t)
 ```
 
-(`max(C_t)` cancela no numerador e denominador da forma longa no código.) Sub-canais com magnitudes diferentes recebem tolerância proporcional à própria escala — sem tuning manual de `sigma_proxy` por variável.
+(`max(C_t)` cancela no numerador e denominador da forma longa no código.) Um único `proxy_scale` é calculado por dimensão a partir da série `C_t` daquela dimensão — sem tuning manual de tolerância por dimensão.
 
 ---
 
