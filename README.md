@@ -280,13 +280,13 @@ Benchmark: `validacao_prior_auxiliar.ipynb` — 40 cenários (K=4, T=52, `scale`
 
 Sem normalização, o proxy (escala absoluta de `C_t`) domina o gradiente e o otimizador diverge. `X_proxy = C_t / max(C_t)` alinha a escala com as saídas Hill.
 
-### H3 — Sigma do Proxy Auto-calibrado por Sub-canal ✅
+### H3 — Sigma do Proxy Auto-calibrado por Dimensão ✅
 
 ```
-sigma_proxy_v = tolerance × mean(C_t_v[C_t_v > 0]) / max(C_t_v)
+proxy_scale = tolerance × mean(C_t[C_t > 0]) / max(C_t)
 ```
 
-(`max(C_t)` cancela no numerador e denominador da forma longa no código.) Sub-canais com magnitudes diferentes recebem tolerância proporcional à própria escala — sem tuning manual de `sigma_proxy` por variável.
+Um único `proxy_scale` é calculado por dimensão a partir da série `C_t` daquela dimensão — sem tuning manual de tolerância por dimensão.
 
 ---
 
@@ -414,10 +414,10 @@ ROAS Index é **relativo ao canal** — não é ROAS absoluto. Valor 1.4 = 40% m
 # Testes rápidos
 pytest deepdive/tests/ -v
 
-# Incluir integração (MAP 500 steps, ~2min)
+# Incluir integração
 pytest deepdive/tests/ -v -m slow
 
-# Benchmark completo (40 cenários, ~20min)
+# Benchmark completo
 python deepdive/benchmarks/share_recovery_benchmark.py
 ```
 
@@ -436,13 +436,12 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 ## 11. Premissas e Limitações
 
 1. **`C_t` como âncora.** A distribuição entre sub-canais herda tanto os acertos quanto as imprecisões do modelo upstream.
-2. **Spend disponível por sub-canal.** Slug ausente no `spend_df` é tratado como spend zero — não erro. Dimensão inteira pulada só se menos de 2 sub-canais têm qualquer spend (`n_active < 2`) ou HHI > threshold. Sub-canal individual sem spend é descartado ou vai para `__outros__`.
-3. **Hill assume saturação monotônica crescente.** Formas em U ou com threshold não são capturadas.
-4. **Frequência semanal (W-MON).** Séries diárias são agregadas; mensais não são suportadas.
-5. **Sub-canais com <2% de spend** são agrupados em `__outros__`. Aumentar `min_share` em `run_diagnostics()` se necessário.
-6. **`share_prior_scale`** deve ser calibrado por veículo: 0.05 (default sem dados auxiliares) → 0.005 (com dados de medição).
-7. **Alta correlação entre sub-canais** (todos crescem juntos) reduz identificabilidade. O CSL mitiga mas não elimina.
-8. **`proxy_ratio` fora de 0.85–1.15** indica pouco sinal em `C_t` para o nível de detalhe solicitado — não necessariamente erro de código.
+2. **Spend disponível por sub-canal.** Slug ausente no `spend_df` → spend zero → descartado silenciosamente (sem erro, sem entrar em `__outros__`). Sub-canal com spend > 0 mas < 2% vai pra `__outros__`. Dimensão inteira pulada se `n_active < 2` ou HHI > threshold.
+3. **Frequência semanal (W-MON).** Séries diárias são agregadas; mensais não são suportadas.
+4. **Sub-canais com <2% de spend** são agrupados em `__outros__`. Aumentar `min_share` em `run_diagnostics()` se necessário.
+5. **`share_prior_scale`** deve ser calibrado por veículo: 0.05 (default sem dados auxiliares) → 0.005 (com dados de medição).
+6. **Alta correlação entre sub-canais** (todos crescem juntos) reduz identificabilidade. O CSL mitiga mas não elimina.
+7. **`proxy_ratio` fora de 0.85–1.15** indica pouco sinal em `C_t` para o nível de detalhe solicitado.
 
 ---
 
