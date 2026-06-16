@@ -7,7 +7,7 @@
 
 ## 1. Contexto e Problema
 
-Um MMM (Stan / Meridian) produz a contribuição total do veículo `C_t` — um único número semanal que representa quanto o canal inteiro contribuiu para o KPI (vendas, transações, receita).
+Um MMM produz a contribuição total do veículo `C_t` — um único número semanal que representa quanto o canal inteiro contribuiu para o KPI (vendas, transações, receita).
 
 O Deep Dive responde à pergunta que o MMM não responde diretamente:
 
@@ -59,7 +59,7 @@ deepdive/
 ## 3. Pipeline — Visão Geral
 
 ```
-MMM Base (Stan/Meridian)
+MMM Base 
         │
         ▼
   C_t = contribuição semanal do canal
@@ -71,7 +71,7 @@ MMM Base (Stan/Meridian)
 
 Cada dimensão é ajustada **independentemente**, mas todas usam o mesmo `C_t` como âncora. O pipeline opera em três etapas:
 
-1. **Extração** — `load_upgrade_stan` / `load_meridian_upgrade`: carrega `contrib_df` e `spend_df` via parquets MLflow (~0.3 MB vs. 768 MB pkl).
+1. **Extração** — `load_upgrade_stan` / `load_meridian_upgrade`: carrega `contrib_df` e `spend_df` via parquets MLflow.
 2. **Diagnóstico** — `run_diagnostics`: filtra sub-canais com <2% de spend, agrupa em `__outros__`, calcula HHI e semanas ativas.
 3. **Deep Dive Raven** — `run_deep_dive`: ajusta modelo Hill por dimensão, ancorado em `C_t`.
 
@@ -150,13 +150,53 @@ log p(shares | Hills) = sum_k log Normal(model_share_k ; metric_share_k, scale)
 
 Por default, `metric_df = spend_df`. Com dados auxiliares (GRP, brand awareness, impressões), substituir `metric_df` e reduzir `scale` para 0.005.
 
+### 4.5 Prior Auxiliar de Medição
+
+Por padrão `metric_df = spend_df` — shares de spend como referência no CSL. Quando dados de medição direta estão disponíveis (GRP por praça, impressões por formato, brand awareness por região), eles podem substituir o spend como referência, capturando exposição real em vez de apenas investimento.
+
+**Modelo generativo do ruído de medição:**
+
+Dado ground-truth de shares `σ_k^true`, a medição observada é corrompida por ruído log-normal:
+
+```
+ℓ_k = log(σ_k^true) + η_k,    η_k ~ N(0, σ_meas)
+```
+
+O `metric_df` é construído aplicando softmax sobre as log-medições:
+
+```
+metric_share_k = exp(ℓ_k) / Σ_j exp(ℓ_j)
+```
+
+No caso noiseless (η=0): `softmax(log(σ^true))_k = σ_k^true`. Com ruído, as shares observadas se desviam das verdadeiras proporcionalmente a `σ_meas`.
+
+**Por que é melhor que spend:**
+
+| Referência | Captura | Limitação |
+|---|---|---|
+| Spend | Quanto foi investido | Diferenças de CPM entre sub-canais distorcem shares |
+| Medição (GRP, impressões) | Exposição real ao público | Ruído de medição; disponibilidade por cliente |
+
+**Trade-off validado (benchmark H1):**
+
+| `scale` | `σ_meas` | MAE | Proxy ratio | Status |
+|---|---|---|---|---|
+| 0.05 (spend puro) | — | 0.059 | ≈ 1.0 | baseline |
+| 0.005 | 0.00 | 0.031 | ≈ 1.0 | **−47% — ponto ótimo** |
+| 0.005 | 0.20 | 0.044 | ≈ 1.0 | **−25% mesmo com ruído alto** |
+| 0.001 | 0.00 | 0.016 | 1.225 | ⚠️ viola âncora C_t |
+
+`scale=0.001` melhora shares mas viola a âncora proxy em 22% — o modelo passa a "inventar" contribuição além de C_t. Ponto ótimo: `scale=0.005`.
+
+---
+
 ### 4.4 Objetivo MAP Completo
 
 ```
 theta* = argmax_theta [
     log p(proxy | Hills, sigma_proxy)           ← âncora de proxy
   + log p(model_shares | metric_shares, scale)  ← prior de share (CSL)
-  + log p(C_t | theta)                          ← verossimilhança principal
+  + log p(C_t | theta)                          ← likelihood principal
   + log p(theta)                                ← priors Hill
 ]
 ```
@@ -173,7 +213,7 @@ Otimizador: **AdamW + cosine decay** (`CosineScheduleAdamWOptimizer`):
 
 ### Dataclasses Tipadas
 
-`DeepDiveConfig`, `UpgradeResult`, `DiagnosisResult`, `DDResult` — sem dicts volantes.
+`DeepDiveConfig`, `UpgradeResult`, `DiagnosisResult`, `DDResult`.
 
 ### Diagnósticos Pré-Fit
 
@@ -184,7 +224,7 @@ run_diagnostics(config, upgrade)
   → DiagnosisResult.skipped_dims    # dims sem variáveis após filtro
 ```
 
-Limiares padrão: `min_share=0.02`, `min_active_weeks=4`.
+Limiares padrão: `min_spend_share=0.02`, `min_active_weeks=2`.
 
 ### Rollup Genérico via YAML
 
@@ -213,7 +253,7 @@ Novo veículo = novo YAML. Sem alteração de código Python.
 
 `_load_from_parquets(run_id, contribution_metric_type, model_type)`:
 - Stan: `contribution_metric_type="Contribution Unadstocked"`
-- Meridian: `contribution_metric_type="Contribution"` + tolerância de +1 semana (daily→weekly bucketing cria semana extra na borda)
+- Meridian: `contribution_metric_type="Contribution"` + tolerância de +1 linha (`contrib_df` pode ter 1 linha a mais que o input — trimada automaticamente)
 
 ### Validação Semi-Sintética
 
@@ -240,13 +280,13 @@ Benchmark: `validacao_prior_auxiliar.ipynb` — 40 cenários (K=4, T=52, `scale`
 
 Sem normalização, o proxy (escala absoluta de `C_t`) domina o gradiente e o otimizador diverge. `X_proxy = C_t / max(C_t)` alinha a escala com as saídas Hill.
 
-### H3 — CSL com Escala por Canal Evita Tuning Manual ✅
+### H3 — Sigma do Proxy Auto-calibrado por Sub-canal ✅
 
 ```
-sigma_proxy_v = tolerance × mean(C_t_v[C_t_v > 0]) / max(C_t) / (max(C_t_v) / max(C_t))
+sigma_proxy_v = tolerance × mean(C_t_v[C_t_v > 0]) / max(C_t_v)
 ```
 
-Variáveis com contribuições maiores recebem prior mais rígido automaticamente.
+(`max(C_t)` cancela no numerador e denominador da forma longa no código.) Sub-canais com magnitudes diferentes recebem tolerância proporcional à própria escala — sem tuning manual de `sigma_proxy` por variável.
 
 ---
 
@@ -259,7 +299,6 @@ Variáveis com contribuições maiores recebem prior mais rígido automaticament
 | MAP com CosineScheduleAdamW | Adam (lr fixo) | Weight decay regulariza `max_effect`; cosine decay estabiliza convergência sem tuning manual de lr |
 | PiecewiseLinearTrend | FlatTrend | Sub-canais podem ter dinâmicas independentes; piecewise detecta breakpoints locais |
 | Rollups declarativos em YAML | Código Python por veículo | Extensível sem mudança de código |
-| Parquets via MLflow | pkl serializado | ~0.3 MB vs. 768 MB; sem dependência de ambiente de treinamento |
 
 ---
 
@@ -309,7 +348,10 @@ _         = analyze_deepdive(result)
 ### 8.3 Batch Multi-Cliente
 
 ```python
-all_results, diags, errors = run_deep_dive_batch("configs/clients_registry.yaml")
+registry   = load_registry("configs/clients_registry.yaml")
+all_results, diags = run_deep_dive_batch(registry,
+                                         registry_path="configs/clients_registry.yaml",
+                                         output_base_dir="outputs")
 df_meta    = consolidate_results(all_results, vehicle_spec_override=vehicle_spec)
 batch_figs = analyze_batch(all_results, df_meta, vehicle_spec_override=vehicle_spec)
 tree_figs  = analyze_trees(all_results, vehicle_spec_override=vehicle_spec)
@@ -362,7 +404,7 @@ ROAS Index é **relativo ao canal** — não é ROAS absoluto. Valor 1.4 = 40% m
 |---|---|
 | `outputs/batch/meta_analysis.csv` | Long-form: cliente, dim, rollup, item, share_model, share_spend, roas_index |
 | `outputs/batch/report_{Dim}.html` | Tabelas comparativas + sunburst por dimensão |
-| `outputs/benchmark_share_recovery.csv` | scale, scenario, seed, mae, rmse, proxy_ratio |
+| `outputs/benchmark_share_recovery.csv` | scale, scenario, seed, mae, rmse, max_err, proxy_ratio |
 
 ---
 
@@ -394,7 +436,7 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 ## 11. Premissas e Limitações
 
 1. **`C_t` como âncora.** A distribuição entre sub-canais herda tanto os acertos quanto as imprecisões do modelo upstream.
-2. **Spend disponível por sub-canal.** Se a coluna `media_var` não bater exatamente com as slugs do YAML, a dimensão é pulada. Slugs devem ser exatas — sem inferência heurística.
+2. **Spend disponível por sub-canal.** Slug ausente no `spend_df` é tratado como spend zero — não erro. Dimensão inteira pulada só se menos de 2 sub-canais têm qualquer spend (`n_active < 2`) ou HHI > threshold. Sub-canal individual sem spend é descartado ou vai para `__outros__`.
 3. **Hill assume saturação monotônica crescente.** Formas em U ou com threshold não são capturadas.
 4. **Frequência semanal (W-MON).** Séries diárias são agregadas; mensais não são suportadas.
 5. **Sub-canais com <2% de spend** são agrupados em `__outros__`. Aumentar `min_share` em `run_diagnostics()` se necessário.
@@ -421,4 +463,4 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 - Mover `ContributionShareLikelihood` para `prophetverse` como efeito nativo
 - Mover `extra_effects` + prior dicts para `mmmverse` como API nativa do Raven
 - Classe `RavenDeepDive` em `mmmverse` encapsulando o fluxo completo
-- `load_raven_upgrade()` para contribuições de modelos Raven como upstream
+- `load_raven_upgrade()` para contribuições de modelos Raven como base
