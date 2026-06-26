@@ -26,6 +26,8 @@ def generate_report(
         sh_s = result.shares_spend.get(dim, pd.Series(dtype=float))
         proxy_r = result.proxy_ratios.get(dim, float("nan"))
         csl_d = result.csl_devs.get(dim, float("nan"))
+        r2_v = result.r2.get(dim, float("nan"))
+        wape_v = result.wape.get(dim, float("nan"))
         for item in sh_m.index:
             shares_rows.append({
                 "dim": dim,
@@ -34,6 +36,8 @@ def generate_report(
                 "spend_share": float(sh_s.get(item, 0.0)),
                 "proxy_ratio": proxy_r,
                 "csl_max_dev": csl_d,
+                "r2": r2_v,
+                "wape": wape_v,
             })
     shares_df = pd.DataFrame(shares_rows)
     csv_shares = os.path.join(output_dir, f"{prefix}shares.csv")

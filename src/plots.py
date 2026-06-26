@@ -234,9 +234,11 @@ def _print_breakdown_summary(result, dim: str) -> None:
     total_dim = float(contribs.sum(axis=1).sum())
     proxy_r = result.proxy_ratios.get(dim, float("nan"))
     csl_d = result.csl_devs.get(dim, float("nan"))
+    r2_v = result.r2.get(dim, float("nan"))
+    wape_v = result.wape.get(dim, float("nan"))
 
     print(f"\n{'='*66}")
-    print(f"  {dim}  (proxy_ratio={proxy_r:.3f}  CSL_max_dev={csl_d:.3f})")
+    print(f"  {dim}  (proxy_ratio={proxy_r:.3f}  CSL_max_dev={csl_d:.3f}  R²={r2_v:.4f}  WAPE={wape_v:.4f})")
     print(f"{'='*66}")
     print(f"  Âncora Stan     : {total_anchor:>14,.0f}")
     print(f"  Soma sub-canais : {total_dim:>14,.0f}  (deve ≈ âncora)")

@@ -23,6 +23,8 @@ class DDResult:
     shares_spend: dict[str, pd.Series]
     proxy_ratios: dict[str, float]
     csl_devs: dict[str, float]
+    r2: dict[str, float]
+    wape: dict[str, float]
     media_dd_contrib: pd.Series
     config: DeepDiveConfig
     features_raw: dict[str, pd.DataFrame] = field(default_factory=dict)
@@ -167,8 +169,19 @@ def _run_raven_dim(
     _sh_spend = features_raw[variaveis].sum() / (features_raw[variaveis].sum().sum() + 1e-12)
     _csl_max_dev = (_sh_mod - _sh_spend).abs().max()
 
+    _ct_hat = contribs.sum(axis=1)
+    _ct_vals = _ct.reindex(_ct_hat.index).fillna(0)
+    _ss_res = float(((_ct_vals - _ct_hat) ** 2).sum())
+    _ss_tot = float(((_ct_vals - _ct_vals.mean()) ** 2).sum())
+    _r2 = 1.0 - _ss_res / (_ss_tot + 1e-12)
+    _wape = float((_ct_vals - _ct_hat).abs().sum() / (_ct_vals.abs().sum() + 1e-12))
+
     if verbose:
-        print(f"  [{dim_name}] proxy_ratio={_proxy_ratio:.4f}  CSL_max_dev={_csl_max_dev:.3f}")
+        print(
+            f"  [{dim_name}] proxy_ratio={_proxy_ratio:.4f}"
+            f"  CSL_max_dev={_csl_max_dev:.3f}"
+            f"  R²={_r2:.4f}  WAPE={_wape:.4f}"
+        )
 
     return {
         "model": raven2,
@@ -176,6 +189,8 @@ def _run_raven_dim(
         "contribs": contribs,
         "proxy_ratio": float(_proxy_ratio),
         "csl_max_dev": float(_csl_max_dev),
+        "r2": float(_r2),
+        "wape": float(_wape),
         "shares_model": _sh_mod,
         "shares_spend": _sh_spend,
         "y2": y2,
@@ -202,7 +217,7 @@ def run_deep_dive(
     media_dd_contrib = upgrade.contrib_df[config.media_var]
 
     models, contribs, shares_model, shares_spend = {}, {}, {}, {}
-    proxy_ratios, csl_devs, features_raw_all, col_maxes_all = {}, {}, {}, {}
+    proxy_ratios, csl_devs, r2s, wapes, features_raw_all, col_maxes_all = {}, {}, {}, {}, {}, {}
 
     for dim in config.dims:
         slugs = config.vars_per_dim.get(dim, [])
@@ -233,6 +248,8 @@ def run_deep_dive(
         shares_spend[dim] = r["shares_spend"]
         proxy_ratios[dim] = r["proxy_ratio"]
         csl_devs[dim] = r["csl_max_dev"]
+        r2s[dim] = r["r2"]
+        wapes[dim] = r["wape"]
         features_raw_all[dim] = r["features_raw"]
         col_maxes_all[dim] = r["col_maxes"]
 
@@ -243,6 +260,8 @@ def run_deep_dive(
         shares_spend=shares_spend,
         proxy_ratios=proxy_ratios,
         csl_devs=csl_devs,
+        r2=r2s,
+        wape=wapes,
         media_dd_contrib=media_dd_contrib,
         config=config,
         features_raw=features_raw_all,
