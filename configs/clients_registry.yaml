@@ -1,25 +1,51 @@
 # Registry of clients for batch Deep Dive runs.
-# Each entry maps to a client YAML with model_type, run_id, and workspace.
 #
-# model_type: "stan" | "meridian" | "raven"
-# specs_path: relative to deepdive/configs/
+# Two formats supported:
 #
-# Add new clients here; the batch notebook reads this registry.
+# Multi-vehicle (recommended):
+#   client_name:
+#     output_subdir: "ClientName"
+#     vehicles:
+#       vehicle_name:
+#         specs_path: "client_vehicle.yaml"
+#
+# Legacy single-vehicle (backward compat):
+#   client_name:
+#     specs_path: "client.yaml"
+#     output_subdir: "ClientName"
+#
+# To run all vehicles for a client:   clients=["bradesco"]
+# To run one specific vehicle:        clients=["bradesco_tiktok"]
 
 clients:
   bradesco:
-    specs_path: "bradesco_eletro.yaml"
-    model_type: stan
-    output_subdir: "bradesco"
+    output_subdir: "Bradesco"
+    vehicles:
+      eletromidia:
+        specs_path: "bradesco_eletro.yaml"
+      tiktok:
+        specs_path: "bradesco_tiktok.yaml"
+
+  casas_bahia:
+    output_subdir: "Casas_Bahia"
+    vehicles:
+      tiktok:
+        specs_path: "casas_bahia_tiktok.yaml"
+
+  alpargatas:
+    output_subdir: "Alpargatas"
+    vehicles:
+      tiktok:
+        specs_path: "alpargatas_tiktok.yaml"
 
   hypera:
-    specs_path: "hypera_eletro.yaml"
-    model_type: meridian
-    output_subdir: "hypera"
-    # TODO: fill media_var and workspace_dd in hypera_eletro.yaml before running
+    output_subdir: "Hypera"
+    vehicles:
+      eletromidia:
+        specs_path: "hypera_eletro.yaml"  # TODO: fill media_var e workspace_dd
 
   opella:
-    specs_path: "opella_eletro.yaml"
-    model_type: meridian
-    output_subdir: "opella"
-    # TODO: fill media_var and workspace_dd in opella_eletro.yaml before running
+    output_subdir: "Opella"
+    vehicles:
+      eletromidia:
+        specs_path: "opella_eletro.yaml"  # TODO: fill media_var e workspace_dd
