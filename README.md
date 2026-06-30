@@ -182,16 +182,16 @@ No caso noiseless (η=0): `softmax(log(σ^true))_k = σ_k^true`. Com ruído, as 
 | Spend | Quanto foi investido | Diferenças de CPM entre sub-canais distorcem shares |
 | Medição (GRP, impressões) | Exposição real ao público | Ruído de medição; disponibilidade por cliente |
 
-**Trade-off validado (benchmark H1):**
+**Trade-off validado (benchmark H1, média 2 seeds):**
 
 | `scale` | `σ_meas` | MAE | Proxy ratio | Status |
 |---|---|---|---|---|
-| 0.05 (spend puro) | — | 0.059 | ≈ 1.0 | baseline |
-| 0.005 | 0.00 | 0.031 | ≈ 1.0 | **−47% — ponto ótimo** |
-| 0.005 | 0.20 | 0.044 | ≈ 1.0 | **−25% mesmo com ruído alto** |
-| 0.001 | 0.00 | 0.016 | 1.225 | ⚠️ viola âncora C_t |
+| 0.05 (spend puro) | — | 0.062 | 0.95 | baseline |
+| 0.005 | 0.00 | 0.031 | 0.98 | **−49% — ponto ótimo** |
+| 0.005 | 0.20 | 0.044 | 0.96 | **−28% mesmo com ruído alto** |
+| 0.001 | 0.00 | 0.005 | 1.23 | ⚠️ viola âncora C_t |
 
-`scale=0.001` melhora shares mas viola a âncora proxy em 22% — o modelo passa a "inventar" contribuição além de C_t. Ponto ótimo: `scale=0.005`.
+`scale=0.001` melhora shares mas viola a âncora proxy em 23% — o modelo passa a "inventar" contribuição além de C_t. Ponto ótimo: `scale=0.005`.
 
 ---
 
@@ -283,16 +283,16 @@ Novo veículo = novo YAML. Sem alteração de código Python.
 
 ### H1 — Prior Auxiliar Melhora Recuperação de Shares ✅
 
-Benchmark: `validacao_prior_auxiliar.ipynb` — 40 cenários (K=4, T=52, `scale` ∈ {0.001, 0.005, 0.01, 0.05}, `σ_meas` ∈ {0, 0.05, 0.1, 0.2}):
+Benchmark: `validacao_prior_auxiliar.ipynb` — 2 seeds × 20 cenários (K=4, T=52, `scale` ∈ {0.001, 0.005, 0.01, 0.05}, `σ_meas` ∈ {0, 0.05, 0.1, 0.2}), valores médios:
 
 | Cenário | MAE | Δ vs. baseline |
 |---|---|---|
-| Baseline (spend puro) | 0.059 | — |
-| Prior perfeito (`σ_meas=0`, `scale=0.005`) | 0.031 | **−47%** |
-| Prior ruidoso (`σ_meas=0.20`, `scale=0.005`) | 0.044 | **−25%** |
-| `scale=0.05` (default, sem aux) | 0.061 | <1% |
+| Baseline (spend puro) | 0.062 | — |
+| Prior perfeito (`σ_meas=0`, `scale=0.005`) | 0.031 | **−49%** |
+| Prior ruidoso (`σ_meas=0.20`, `scale=0.005`) | 0.044 | **−28%** |
+| `scale=0.05` (default, sem aux) | 0.062 | <1% |
 
-⚠️ `scale=0.001` produz MAE excelente mas `proxy_ratio > 1.2` — viola a âncora. Ponto ótimo validado: `scale=0.005`.
+⚠️ `scale=0.001` produz MAE excelente mas `proxy_ratio ≈ 1.23` — viola a âncora. Ponto ótimo validado: `scale=0.005`.
 
 ### H2 — Normalização do Proxy por `max(y)` Evita Explosão de Gradiente ✅
 
