@@ -3,6 +3,11 @@ from dataclasses import dataclass
 import re
 import pandas as pd
 
+
+def sanitize_dim_name(name: str) -> str:
+    """Slugify a dimension name for use as a DataFrame column or filename."""
+    return re.sub(r"[^\w-]", "", name.lower().replace(" ", "-"))
+
 from config import DeepDiveConfig
 from extraction import UpgradeResult
 
@@ -17,9 +22,9 @@ class DiagnosisResult:
 def run_diagnostics(
     config: DeepDiveConfig,
     upgrade: UpgradeResult,
-    min_spend_share: float = 0.02,
-    hhi_threshold: float = 0.85,
-    min_active_weeks: int = 2,
+    min_spend_share: float | None = None,
+    hhi_threshold: float | None = None,
+    min_active_weeks: int | None = None,
 ) -> tuple[DeepDiveConfig, DiagnosisResult]:
     """Filter config vars by spend structure; bucket tiny vars into __outros__.
 
@@ -27,6 +32,10 @@ def run_diagnostics(
 
     Side-effect: adds __outros__ columns to upgrade.spend_df for bucketed dims.
     """
+    min_spend_share = min_spend_share if min_spend_share is not None else config.min_spend_share
+    hhi_threshold = hhi_threshold if hhi_threshold is not None else config.hhi_threshold
+    min_active_weeks = min_active_weeks if min_active_weeks is not None else config.min_active_weeks
+
     df = upgrade.spend_df.copy()
     rows: list[dict] = []
     new_vars_per_dim: dict[str, list[str]] = {}
@@ -53,22 +62,22 @@ def run_diagnostics(
         if n_active < 2 or hhi > hhi_threshold:
             skipped_dims.append(dim)
             for slug, d in stats.items():
-                rows.append(_make_row(dim, slug, d, cat_total, n_weeks, hhi, rec="SKIP", keep=False, reason="dim SKIP"))
+                rows.append(_make_row(dim, slug, d, cat_total, n_weeks, hhi, rec="SKIP", keep=False, reason="dim SKIP", reason_code="dim_skip"))
             continue
 
         kept, excl = [], []
         for slug, d in stats.items():
             pct = d["total"] / cat_total if cat_total > 0 else 0.0
             if d["total"] == 0:
-                keep, reason = False, "sem spend"
+                keep, reason, rc = False, "sem spend", "no_spend"
             elif pct < min_spend_share:
-                keep, reason = False, f"pct {pct:.1%} < {min_spend_share:.0%}"
+                keep, reason, rc = False, f"pct {pct:.1%} < {min_spend_share:.0%}", "low_pct"
             elif d["active"] < min_active_weeks:
-                keep, reason = False, f"só {d['active']} semana(s)"
+                keep, reason, rc = False, f"só {d['active']} semana(s)", "low_weeks"
             else:
-                keep, reason = True, ""
+                keep, reason, rc = True, "", "kept"
 
-            rows.append(_make_row(dim, slug, d, cat_total, n_weeks, hhi, rec="DD", keep=keep, reason=reason))
+            rows.append(_make_row(dim, slug, d, cat_total, n_weeks, hhi, rec="DD", keep=keep, reason=reason, reason_code=rc))
             if keep:
                 kept.append(slug)
             elif d["total"] > 0:
@@ -76,7 +85,7 @@ def run_diagnostics(
 
         if kept:
             if excl:
-                outros_col = f"__outros__{dim.lower().replace(' ', '-')}"
+                outros_col = f"__outros__{sanitize_dim_name(dim)}"
                 df[outros_col] = df[excl].sum(axis=1)
                 kept.append(outros_col)
                 bucketed[dim] = excl
@@ -94,9 +103,13 @@ def run_diagnostics(
         media_var=config.media_var,
         brand=config.brand,
         vehicle=config.vehicle,
+        model_type=config.model_type,
         share_prior_scale=config.share_prior_scale,
         proxy_ct_tolerance=config.proxy_ct_tolerance,
         num_steps=config.num_steps,
+        min_spend_share=min_spend_share,
+        hhi_threshold=hhi_threshold,
+        min_active_weeks=min_active_weeks,
         vehicle_spec=config.vehicle_spec,
     )
     return new_config, DiagnosisResult(
@@ -127,7 +140,7 @@ def _print_diagnosis(diag_df: pd.DataFrame, min_pct: float, hhi_threshold: float
         n_tot = len(grp)
         n_kp = int(grp["keep"].sum())
         n_ex = n_tot - n_kp
-        flag = "⚠️  " if rec == "SKIP" else "✓  "
+        flag = "[!]  " if rec == "SKIP" else "[ok] "
         print(f"  {flag}{dim:<26}  {rec:>5}  {hhi:>5.2f}  {n_tot:>6}  {n_kp:>6}  {n_ex:>6}")
         for _, row in grp[~grp["keep"]].iterrows():
             label = _slug_label(row["slug"])
@@ -145,7 +158,7 @@ def _print_diagnosis(diag_df: pd.DataFrame, min_pct: float, hhi_threshold: float
     print("─" * w)
 
 
-def _make_row(dim, slug, d, cat_total, n_weeks, hhi, rec, keep, reason):
+def _make_row(dim, slug, d, cat_total, n_weeks, hhi, rec, keep, reason, reason_code="kept"):
     pct = d["total"] / cat_total if cat_total > 0 else 0.0
     return {
         "dim": dim,
@@ -158,4 +171,5 @@ def _make_row(dim, slug, d, cat_total, n_weeks, hhi, rec, keep, reason):
         "rec": rec,
         "keep": keep,
         "reason": reason,
+        "reason_code": reason_code,
     }

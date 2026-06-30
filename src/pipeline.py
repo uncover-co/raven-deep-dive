@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
+import warnings
 import jax
 import numpy as np
 import pandas as pd
@@ -23,22 +24,25 @@ class DDResult:
     shares_spend: dict[str, pd.Series]
     proxy_ratios: dict[str, float]
     csl_devs: dict[str, float]
+    r2: dict[str, float]
+    wape: dict[str, float]
     media_dd_contrib: pd.Series
     config: DeepDiveConfig
     features_raw: dict[str, pd.DataFrame] = field(default_factory=dict)
     col_maxes: dict[str, pd.Series] = field(default_factory=dict)
+    upgrade_run_id: str = ""
 
 
-def _wmon_norm(idx) -> pd.DatetimeIndex:
+def wmon_norm(idx) -> pd.DatetimeIndex:
     if isinstance(idx, pd.PeriodIndex):
         return idx.to_timestamp().to_period("W-MON").end_time.normalize()
     return pd.DatetimeIndex(idx).to_period("W-MON").end_time.normalize()
 
 
-def _align_to(src: pd.Series, target_idx) -> pd.Series:
+def align_to(src: pd.Series, target_idx) -> pd.Series:
     s = src.copy()
-    s.index = _wmon_norm(s.index)
-    s = s.reindex(_wmon_norm(target_idx), fill_value=0)
+    s.index = wmon_norm(s.index)
+    s = s.reindex(wmon_norm(target_idx), fill_value=0)
     s.index = target_idx
     return s
 
@@ -74,9 +78,9 @@ def _run_raven_dim(
     Target = media_dd_contrib (channel contribution, not full KPI).
     """
     media_dd_contrib = media_dd_contrib.copy()
-    media_dd_contrib.index = _wmon_norm(media_dd_contrib.index)
+    media_dd_contrib.index = wmon_norm(media_dd_contrib.index)
     features_df = features_df.copy()
-    features_df.index = _wmon_norm(features_df.index)
+    features_df.index = wmon_norm(features_df.index)
 
     if media_dd_contrib.sum() == 0:
         raise ValueError(f"[{dim_name}] media_dd_contrib is all zeros.")
@@ -106,13 +110,20 @@ def _run_raven_dim(
     _ct_nz = _ct[_ct > 0]
 
     X2 = features_norm.copy()
+    assert _proxy_col not in X2.columns, (
+        f"proxy column '{_proxy_col}' collides with existing feature in dim '{dim_name}'. "
+        "Rename the dimension or the conflicting variable."
+    )
     X2[_proxy_col] = _ct.values / (_y2_max + 1e-12)
 
-    _proxy_scale = (
-        proxy_ct_tolerance * float(_ct_nz.mean()) / _y2_max
-        / (float(_ct.abs().max()) / _y2_max + 1e-12)
-        if len(_ct_nz) > 0 else PROXY_SCALE_FALLBACK
-    )
+    if len(_ct_nz) == 0:
+        print(f"  [WARNING] [{dim_name}] no non-zero contrib obs — using PROXY_SCALE_FALLBACK={PROXY_SCALE_FALLBACK}")
+        _proxy_scale = PROXY_SCALE_FALLBACK
+    else:
+        _proxy_scale = (
+            proxy_ct_tolerance * float(_ct_nz.mean()) / _y2_max
+            / (float(_ct.abs().max()) / _y2_max + 1e-12)
+        )
 
     _csl = ContributionShareLikelihood(
         target_effect_names=[
@@ -154,7 +165,9 @@ def _run_raven_dim(
         ),
     )
 
-    raven2.fit(y=y2, X=X2)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Columns .* are already set", category=UserWarning)
+        raven2.fit(y=y2, X=X2)
     _comps = raven2.predict_components(fh=y2.index, X=X2)
 
     contribs = pd.DataFrame(
@@ -167,8 +180,19 @@ def _run_raven_dim(
     _sh_spend = features_raw[variaveis].sum() / (features_raw[variaveis].sum().sum() + 1e-12)
     _csl_max_dev = (_sh_mod - _sh_spend).abs().max()
 
+    _ct_hat = contribs.sum(axis=1)
+    _ct_vals = _ct.reindex(_ct_hat.index).fillna(0)
+    _ss_res = float(((_ct_vals - _ct_hat) ** 2).sum())
+    _ss_tot = float(((_ct_vals - _ct_vals.mean()) ** 2).sum())
+    _r2 = 1.0 - _ss_res / (_ss_tot + 1e-12)
+    _wape = float((_ct_vals - _ct_hat).abs().sum() / (_ct_vals.abs().sum() + 1e-12))
+
     if verbose:
-        print(f"  [{dim_name}] proxy_ratio={_proxy_ratio:.4f}  CSL_max_dev={_csl_max_dev:.3f}")
+        print(
+            f"  [{dim_name}] proxy_ratio={_proxy_ratio:.4f}"
+            f"  CSL_max_dev={_csl_max_dev:.3f}"
+            f"  R²={_r2:.4f}  WAPE={_wape:.4f}"
+        )
 
     return {
         "model": raven2,
@@ -176,6 +200,8 @@ def _run_raven_dim(
         "contribs": contribs,
         "proxy_ratio": float(_proxy_ratio),
         "csl_max_dev": float(_csl_max_dev),
+        "r2": float(_r2),
+        "wape": float(_wape),
         "shares_model": _sh_mod,
         "shares_spend": _sh_spend,
         "y2": y2,
@@ -191,6 +217,7 @@ def run_deep_dive(
     upgrade: UpgradeResult,
     auxiliary_metric_dfs: dict[str, pd.DataFrame] | None = None,
     verbose: bool = True,
+    upgrade_run_id: str = "",
 ) -> DDResult:
     """Run deep dive per dimension; collect into DDResult."""
     if config.media_var not in upgrade.contrib_df.columns:
@@ -202,7 +229,7 @@ def run_deep_dive(
     media_dd_contrib = upgrade.contrib_df[config.media_var]
 
     models, contribs, shares_model, shares_spend = {}, {}, {}, {}
-    proxy_ratios, csl_devs, features_raw_all, col_maxes_all = {}, {}, {}, {}
+    proxy_ratios, csl_devs, r2s, wapes, features_raw_all, col_maxes_all = {}, {}, {}, {}, {}, {}
 
     for dim in config.dims:
         slugs = config.vars_per_dim.get(dim, [])
@@ -233,6 +260,8 @@ def run_deep_dive(
         shares_spend[dim] = r["shares_spend"]
         proxy_ratios[dim] = r["proxy_ratio"]
         csl_devs[dim] = r["csl_max_dev"]
+        r2s[dim] = r["r2"]
+        wapes[dim] = r["wape"]
         features_raw_all[dim] = r["features_raw"]
         col_maxes_all[dim] = r["col_maxes"]
 
@@ -243,10 +272,13 @@ def run_deep_dive(
         shares_spend=shares_spend,
         proxy_ratios=proxy_ratios,
         csl_devs=csl_devs,
+        r2=r2s,
+        wape=wapes,
         media_dd_contrib=media_dd_contrib,
         config=config,
         features_raw=features_raw_all,
         col_maxes=col_maxes_all,
+        upgrade_run_id=upgrade_run_id,
     )
 
 
