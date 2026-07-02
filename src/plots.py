@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from pipeline import _align_to
+from pipeline import align_to
 
 # ── Uncover dark theme ────────────────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ def plot_weekly(result, dim: str) -> go.Figure:
             line=dict(width=0),
         ))
 
-    ct = _align_to(result.media_dd_contrib, contribs.index)
+    ct = align_to(result.media_dd_contrib, contribs.index)
     fig.add_trace(go.Scatter(
         x=ct.index, y=ct.values,
         name="C_t total (Stan)",
@@ -108,6 +108,44 @@ def plot_weekly(result, dim: str) -> go.Figure:
 
     fig.update_layout(
         title=f"Contribs Semanais — {dim}",
+        xaxis_title="Semana",
+        yaxis_title="Contribuição",
+    )
+    return _styled(fig)
+
+
+def plot_weekly_df(
+    contribs: pd.DataFrame,
+    ct: pd.Series,
+    title: str = "",
+) -> go.Figure:
+    """Stacked area: weekly contributions from an arbitrary contribs DataFrame + C_t overlay.
+
+    Args:
+        contribs: DataFrame(datetime index, columns=channel names).
+        ct: C_t total series (media_dd_contrib). Aligned to contribs index automatically.
+        title: chart title.
+    """
+    ct_aligned = align_to(ct, contribs.index)
+    fig = go.Figure()
+    for i, col in enumerate(contribs.columns):
+        fig.add_trace(go.Scatter(
+            x=contribs.index,
+            y=contribs[col],
+            name=str(col),
+            stackgroup="one",
+            mode="none",
+            fillcolor=UNCOVER_COLORS[i % len(UNCOVER_COLORS)],
+            line=dict(width=0),
+        ))
+    fig.add_trace(go.Scatter(
+        x=ct_aligned.index, y=ct_aligned.values,
+        name="C_t total (Stan)",
+        mode="lines",
+        line=dict(color="#FFFFFF", width=2, dash="dot"),
+    ))
+    fig.update_layout(
+        title=title or "Contribs Semanais",
         xaxis_title="Semana",
         yaxis_title="Contribuição",
     )
@@ -229,7 +267,7 @@ def _print_breakdown_summary(result, dim: str) -> None:
     contribs = result.contribs.get(dim)
     if contribs is None:
         return
-    anchor = _align_to(result.media_dd_contrib, contribs.index)
+    anchor = align_to(result.media_dd_contrib, contribs.index)
     total_anchor = float(anchor.sum())
     total_dim = float(contribs.sum(axis=1).sum())
     proxy_r = result.proxy_ratios.get(dim, float("nan"))
@@ -263,7 +301,7 @@ def plot_breakdown_total(result, dim: str) -> go.Figure:
     if contribs is None:
         raise ValueError(f"dim '{dim}' not in result.contribs. Available: {list(result.contribs)}")
 
-    anchor = _align_to(result.media_dd_contrib, contribs.index)
+    anchor = align_to(result.media_dd_contrib, contribs.index)
     total_anchor = float(anchor.sum())
     totals = contribs.sum()
 
@@ -394,7 +432,7 @@ def plot_batch_dim(
     # Subplot titles: left col = rollup label + "Share", right = "ROAS Index"
     subplot_titles: list[str] = []
     for rl in rollup_levels:
-        lbl = _ROLLUP_LABEL.get(rl, rl)
+        lbl = _ROLLUP_LABEL.get(rl, rl.replace("_", " ").title())
         subplot_titles += [f"{lbl} — Share" if lbl else "Share",
                            f"{lbl} — ROAS Index" if lbl else "ROAS Index"]
 
@@ -513,7 +551,7 @@ def _print_batch_dim_summary(
         df_r   = df_dim[df_dim["rollup"] == rollup]
         clients = sorted(df_r["client"].unique())
         items   = df_r.groupby("item")["share_model"].mean().sort_values(ascending=False).index.tolist()
-        rl_lbl  = _ROLLUP_LABEL.get(rollup, rollup)
+        rl_lbl  = _ROLLUP_LABEL.get(rollup, rollup.replace("_", " ").title())
 
         print(f"\n{'═'*80}")
         title = f"  {dim}{'/' + rl_lbl if rl_lbl else ''}  ×  {', '.join(clients)}"
@@ -865,39 +903,63 @@ def analyze_trees(
     show: bool = True,
     vehicle_spec_override: dict | None = None,
 ) -> dict[str, go.Figure]:
-    """Tree visualization for all dims with hierarchy rollups.
+    """Tree visualization for all dims with hierarchy rollups, grouped by vehicle.
 
+    Groups all_results by vehicle so each vehicle uses its own vehicle_spec.
     Skips dims without any groups/map rollup config in vehicle_spec.
-    Returns {dim: fig}.
+    Returns {"vehicle / dim": fig} when multiple vehicles, {"dim": fig} when one.
 
     chart_type: "sunburst" (default) | "treemap" | "icicle"
     """
-    vehicle_spec: dict = vehicle_spec_override or {}
-    if not vehicle_spec and all_results:
-        first = next(iter(all_results.values()))
-        vehicle_spec = getattr(getattr(first, "config", None), "vehicle_spec", {})
+    # Group by vehicle key
+    by_vehicle: dict[str, dict] = {}
+    vspec_by_vehicle: dict[str, dict] = {}
+    for run_key, result in all_results.items():
+        veh = getattr(getattr(result, "config", None), "vehicle", "unknown")
+        if veh not in by_vehicle:
+            by_vehicle[veh] = {}
+            vspec_by_vehicle[veh] = (
+                vehicle_spec_override
+                or getattr(getattr(result, "config", None), "vehicle_spec", {})
+            )
+        by_vehicle[veh][run_key] = result
 
-    breakdowns = vehicle_spec.get("breakdowns", {})
-    all_dims = dims or list(breakdowns.keys())
-    hierarchy = vehicle_spec.get("hierarchy", {})
+    multi_vehicle = len(by_vehicle) > 1
     figs: dict[str, go.Figure] = {}
 
-    for dim in all_dims:
-        bd_spec = breakdowns.get(dim, {})
-        rollup_specs = bd_spec.get("rollups", [])
-        has_groups = any(
-            "groups" in r and hierarchy.get(r["groups"]) for r in rollup_specs
-        )
-        has_map = any(
-            "map" in r and hierarchy.get(r["map"]) for r in rollup_specs
-        )
-        if not has_groups and not has_map:
-            continue
+    for veh, veh_results in sorted(by_vehicle.items()):
+        vehicle_spec = vspec_by_vehicle[veh]
+        breakdowns = vehicle_spec.get("breakdowns", {})
+        all_dims = dims or list(breakdowns.keys())
+        hierarchy = vehicle_spec.get("hierarchy", {})
 
-        fig = plot_tree_dim(dim, all_results, vehicle_spec, chart_type=chart_type)
-        if fig is not None:
+        for dim in all_dims:
+            bd_spec = breakdowns.get(dim, {})
+            rollup_specs = bd_spec.get("rollups", [])
+            has_groups = any(
+                "groups" in r and hierarchy.get(r["groups"]) for r in rollup_specs
+            )
+            has_map = any(
+                "map" in r and hierarchy.get(r["map"]) for r in rollup_specs
+            )
+            if not has_groups and not has_map:
+                continue
+
+            fig = plot_tree_dim(dim, veh_results, vehicle_spec, chart_type=chart_type)
+            if fig is None:
+                continue
+
+            if multi_vehicle:
+                fig.update_layout(
+                    title_text=(
+                        f"<b>[{veh}] {dim}</b> — Árvore de Contribuições"
+                        "  (tamanho = share modelo · cor = ROAS Index)"
+                    )
+                )
+
+            key = f"{veh} / {dim}" if multi_vehicle else dim
             if show:
                 fig.show()
-            figs[dim] = fig
+            figs[key] = fig
 
     return figs

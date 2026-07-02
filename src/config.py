@@ -13,9 +13,14 @@ class DeepDiveConfig:
     media_var: str
     brand: str = ""
     vehicle: str = "eletromidia"
+    model_type: str = "stan"
     share_prior_scale: float = 0.05
     proxy_ct_tolerance: float = 0.15
     num_steps: int = 30_000
+    min_spend_share: float = 0.02
+    hhi_threshold: float = 0.85
+    min_active_weeks: int = 2
+    model_name: str = ""          # human-readable model identifier (e.g. "Transacoes CC PF - Nacional")
     vehicle_spec: dict = field(default_factory=dict)  # full spec from vehicle_specs.yaml
 
 
@@ -55,11 +60,17 @@ def _get_template(vehicle_spec: dict, breakdown_spec: dict, model_type: str = "s
 
 
 def _build_stan_vars(
-    vehicle_spec: dict, brand: str, dims: list[str] | None
+    vehicle_spec: dict, brand: str, dims: list[str] | None, model_type: str = "stan"
 ) -> dict[str, list[str]]:
     """Build {dimension_name: [slug, ...]} mapping from vehicle spec."""
     vehicle_slug = vehicle_spec.get("vehicle_slug", "eletromidia")
-    metric = vehicle_spec.get("default_metric", "investments")
+    raw_metric = (
+        vehicle_spec.get("metrics", {}).get(model_type)
+        or vehicle_spec.get("default_metric", "investments")
+    )
+    # metrics entry can be str (single) or list (e.g. meridian uses investments + impressions)
+    metrics = raw_metric if isinstance(raw_metric, list) else [raw_metric]
+
     all_breakdowns = vehicle_spec.get("breakdowns", {})
     # Default: model_dims from vehicle_spec (avoids Estado/Vertical/Tipo being modeled separately).
     # Explicit dims= or YAML dimensions: override this.
@@ -71,18 +82,28 @@ def _build_stan_vars(
         if bd_name not in all_breakdowns:
             continue
         bd = all_breakdowns[bd_name]
-        category = bd["category"]
-        template = _get_template(vehicle_spec, bd, model_type="stan")
-        slugs = []
-        for value in bd.get("values", []):
-            slug = template.format(
-                metric=metric,
-                vehicle=vehicle_slug,
-                brand=brand,
-                category=category,
-                value=value,
+        category = bd.get("category", "")
+        if not category:
+            raise ValueError(
+                f"Breakdown '{bd_name}' missing required field 'category' in vehicle_specs."
             )
-            slugs.append(slug)
+        values = bd.get("values", [])
+        if not values:
+            raise ValueError(
+                f"Breakdown '{bd_name}' has no 'values' defined in vehicle_specs."
+            )
+        template = _get_template(vehicle_spec, bd, model_type=model_type)
+        slugs = []
+        for metric in metrics:
+            for value in values:
+                slug = template.format(
+                    metric=metric,
+                    vehicle=vehicle_slug,
+                    brand=brand,
+                    category=category,
+                    value=value,
+                )
+                slugs.append(slug)
         if slugs:
             result[bd_name] = slugs
     return result
@@ -108,11 +129,23 @@ def build_config(
     base_dir = os.path.dirname(os.path.abspath(specs_path))
     vehicle_specs_path = os.path.normpath(os.path.join(base_dir, vehicle_specs_rel))
 
+    if not os.path.exists(vehicle_specs_path):
+        raise FileNotFoundError(
+            f"vehicle_specs not found: {vehicle_specs_path}\n"
+            f"Check 'vehicle_specs_path' in {specs_path}."
+        )
     vehicle_specs = _load_yaml(vehicle_specs_path)
     vehicle_key = cfg.get("vehicle", "eletromidia")
-    vehicle_spec = vehicle_specs.get("vehicles", {}).get(vehicle_key, {})
+    available_vehicles = list(vehicle_specs.get("vehicles", {}).keys())
+    if vehicle_key not in vehicle_specs.get("vehicles", {}):
+        raise ValueError(
+            f"Vehicle '{vehicle_key}' not found in {vehicle_specs_path}. "
+            f"Available: {available_vehicles}"
+        )
+    vehicle_spec = vehicle_specs["vehicles"][vehicle_key]
+    model_type = cfg.get("model_type", "stan")
 
-    vars_per_dim = _build_stan_vars(vehicle_spec, brand, dims_override)
+    vars_per_dim = _build_stan_vars(vehicle_spec, brand, dims_override, model_type=model_type)
     dims = list(vars_per_dim.keys())
 
     media_var = media_var_override or cfg.get("media_var")
@@ -129,8 +162,13 @@ def build_config(
         media_var=media_var,
         brand=brand,
         vehicle=vehicle_key,
+        model_type=model_type,
+        model_name=cfg.get("model_name", ""),
         share_prior_scale=cfg.get("share_prior_scale", 0.05),
         proxy_ct_tolerance=cfg.get("proxy_ct_tolerance", 0.15),
         num_steps=cfg.get("num_steps", 30_000),
+        min_spend_share=cfg.get("min_spend_share", 0.02),
+        hhi_threshold=cfg.get("hhi_threshold", 0.85),
+        min_active_weeks=cfg.get("min_active_weeks", 2),
         vehicle_spec=vehicle_spec,
     )

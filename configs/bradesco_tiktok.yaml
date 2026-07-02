@@ -1,0 +1,24 @@
+# Client config — Bradesco, TikTok Deep Dive
+
+brand: bradesco
+vehicle: tiktok
+model_name: "Transacoes CC PF - Nacional"
+vehicle_specs_path: "../data/vehicle_specs.yaml"
+
+model_type: stan
+
+mlflow_tracking_uri: "https://mlflow-dev.cloud.uncover.co"
+upgrade_run_id: "c21fe344b2954315aec5cc0eefbc9249"        
+
+
+workspace_dd: "ba---tiktok---deepdive"          
+start_date: "2023-06-05"            
+end_date:   "2025-08-11"            
+
+media_var: "tiktok ads"             
+
+dimensions: null
+
+share_prior_scale: 0.05
+proxy_ct_tolerance: 0.15
+num_steps: 30000

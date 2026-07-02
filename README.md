@@ -32,25 +32,30 @@ deepdive/
 │   ├── plots.py                     # Plotly dark theme + analyze_deepdive/batch/trees
 │   ├── report.py                    # generate_report() — CSVs + HTMLs por cliente
 │   ├── batch.py                     # run_deep_dive_batch() + consolidate_results()
+│   ├── stability.py                 # run_stability_test() — MAP multi-seed
 │   ├── synthetic_data.py            # generate_synthetic_dim() — validação semi-sintética
 │   ├── contrib_share_likelihood.py  # ContributionShareLikelihood — efeito prophetverse
 │   └── raven_patch.py               # Raven subclass + CosineScheduleAdamWOptimizer
 ├── tests/
 ├── configs/
-│   ├── clients_registry.yaml        # Cadastro de clientes
+│   ├── clients_registry.yaml        # Cadastro de clientes (formato multi-veículo)
 │   ├── bradesco_eletro.yaml
+│   ├── bradesco_tiktok.yaml
+│   ├── casas_bahia_tiktok.yaml
+│   ├── alpargatas_tiktok.yaml
 │   ├── hypera_eletro.yaml
 │   └── opella_eletro.yaml
 ├── data/
 │   └── vehicle_specs.yaml           # Hierarquias, slugs e rollups por veículo
 ├── notebooks/
-│   ├── deep_dive_eletro.ipynb            # Pipeline single-client
+│   ├── deep_dive_eletro.ipynb            # Pipeline single-client (Eletromidia)
+│   ├── deep_dive_tiktok.ipynb            # Pipeline single-client (TikTok)
 │   ├── deep_dive_batch.ipynb             # Pipeline multi-cliente + meta-análise
 │   └── validacao_prior_auxiliar.ipynb    # Benchmark: prior auxiliar de medição
 ├── benchmarks/
 │   └── share_recovery_benchmark.py
 └── outputs/
-    ├── {cliente}/                    # CSVs + HTMLs por cliente
+    ├── {cliente}_{vehicle}/          # CSVs + HTMLs por cliente × veículo
     └── batch/                        # meta_analysis.csv + sunbursts
 ```
 
@@ -177,16 +182,16 @@ No caso noiseless (η=0): `softmax(log(σ^true))_k = σ_k^true`. Com ruído, as 
 | Spend | Quanto foi investido | Diferenças de CPM entre sub-canais distorcem shares |
 | Medição (GRP, impressões) | Exposição real ao público | Ruído de medição; disponibilidade por cliente |
 
-**Trade-off validado (benchmark H1):**
+**Trade-off validado (benchmark H1, média 2 seeds):**
 
 | `scale` | `σ_meas` | MAE | Proxy ratio | Status |
 |---|---|---|---|---|
-| 0.05 (spend puro) | — | 0.059 | ≈ 1.0 | baseline |
-| 0.005 | 0.00 | 0.031 | ≈ 1.0 | **−47% — ponto ótimo** |
-| 0.005 | 0.20 | 0.044 | ≈ 1.0 | **−25% mesmo com ruído alto** |
-| 0.001 | 0.00 | 0.016 | 1.225 | ⚠️ viola âncora C_t |
+| 0.05 (spend puro) | — | 0.062 | 0.95 | baseline |
+| 0.005 | 0.00 | 0.031 | 0.98 | **−49% — ponto ótimo** |
+| 0.005 | 0.20 | 0.044 | 0.96 | **−28% mesmo com ruído alto** |
+| 0.001 | 0.00 | 0.005 | 1.23 | ⚠️ viola âncora C_t |
 
-`scale=0.001` melhora shares mas viola a âncora proxy em 22% — o modelo passa a "inventar" contribuição além de C_t. Ponto ótimo: `scale=0.005`.
+`scale=0.001` melhora shares mas viola a âncora proxy em 23% — o modelo passa a "inventar" contribuição além de C_t. Ponto ótimo: `scale=0.005`.
 
 ---
 
@@ -215,6 +220,19 @@ Otimizador: **AdamW + cosine decay** (`CosineScheduleAdamWOptimizer`):
 
 `DeepDiveConfig`, `UpgradeResult`, `DiagnosisResult`, `DDResult`.
 
+Campos de `DeepDiveConfig` configuráveis via YAML:
+
+| Campo | Default | Descrição |
+|---|---|---|
+| `model_type` | `"stan"` | `"stan"` ou `"meridian"` — controla extração e template de slug |
+| `model_name` | `""` | Identificador legível do modelo upstream (ex: `"Transacoes CC PF - Nacional"`) |
+| `share_prior_scale` | `0.05` | Escala do CSL (0.005 com dados auxiliares) |
+| `proxy_ct_tolerance` | `0.15` | Tolerância ±% da âncora `C_t` |
+| `num_steps` | `30_000` | Steps de otimização MAP por dimensão |
+| `min_spend_share` | `0.02` | Sub-canais abaixo vão pra `__outros__` |
+| `hhi_threshold` | `0.85` | HHI máximo — dimensão pulada se mais concentrada |
+| `min_active_weeks` | `2` | Semanas ativas mínimas por sub-canal |
+
 ### Diagnósticos Pré-Fit
 
 ```python
@@ -224,7 +242,7 @@ run_diagnostics(config, upgrade)
   → DiagnosisResult.skipped_dims    # dims sem variáveis após filtro
 ```
 
-Limiares padrão: `min_spend_share=0.02`, `min_active_weeks=2`.
+Limiares configuráveis via YAML ou campos de `DeepDiveConfig`: `min_spend_share`, `hhi_threshold`, `min_active_weeks`.
 
 ### Rollup Genérico via YAML
 
@@ -265,16 +283,16 @@ Novo veículo = novo YAML. Sem alteração de código Python.
 
 ### H1 — Prior Auxiliar Melhora Recuperação de Shares ✅
 
-Benchmark: `validacao_prior_auxiliar.ipynb` — 40 cenários (K=4, T=52, `scale` ∈ {0.001, 0.005, 0.01, 0.05}, `σ_meas` ∈ {0, 0.05, 0.1, 0.2}):
+Benchmark: `validacao_prior_auxiliar.ipynb` — 2 seeds × 20 cenários (K=4, T=52, `scale` ∈ {0.001, 0.005, 0.01, 0.05}, `σ_meas` ∈ {0, 0.05, 0.1, 0.2}), valores médios:
 
 | Cenário | MAE | Δ vs. baseline |
 |---|---|---|
-| Baseline (spend puro) | 0.059 | — |
-| Prior perfeito (`σ_meas=0`, `scale=0.005`) | 0.031 | **−47%** |
-| Prior ruidoso (`σ_meas=0.20`, `scale=0.005`) | 0.044 | **−25%** |
-| `scale=0.05` (default, sem aux) | 0.061 | <1% |
+| Baseline (spend puro) | 0.062 | — |
+| Prior perfeito (`σ_meas=0`, `scale=0.005`) | 0.031 | **−49%** |
+| Prior ruidoso (`σ_meas=0.20`, `scale=0.005`) | 0.044 | **−28%** |
+| `scale=0.05` (default, sem aux) | 0.062 | <1% |
 
-⚠️ `scale=0.001` produz MAE excelente mas `proxy_ratio > 1.2` — viola a âncora. Ponto ótimo validado: `scale=0.005`.
+⚠️ `scale=0.001` produz MAE excelente mas `proxy_ratio ≈ 1.23` — viola a âncora. Ponto ótimo validado: `scale=0.005`.
 
 ### H2 — Normalização do Proxy por `max(y)` Evita Explosão de Gradiente ✅
 
@@ -312,6 +330,8 @@ Um único `proxy_scale` é calculado por dimensão a partir da série `C_t` daqu
 # configs/novo_cliente_eletro.yaml
 brand: nome-da-marca
 vehicle: eletromidia
+model_type: stan          # stan ou meridian
+model_name: "Nome do Modelo Upstream"  # identificador legível (opcional)
 vehicle_specs_path: ../data/vehicle_specs.yaml
 mlflow_tracking_uri: https://mlflow-dev.cloud.uncover.co
 upgrade_run_id: <run_id_do_mmm>
@@ -337,12 +357,13 @@ clients:
 ### 8.2 Single-Client
 
 ```python
-upgrade   = load_upgrade_stan(run_id, tracking_uri=mlflow_uri)
-config    = build_config(upgrade, specs_path="configs/bradesco_eletro.yaml")
-config, _ = run_diagnostics(config, upgrade)
-result    = run_deep_dive(config, upgrade)
-_         = analyze_deepdive(result)
-            generate_report(result, output_dir)
+upgrade        = load_upgrade_stan(run_id, tracking_uri=mlflow_uri)
+config         = build_config(upgrade, specs_path="configs/bradesco_eletro.yaml")
+config, diag   = run_diagnostics(config, upgrade)
+result         = run_deep_dive(config, upgrade)
+_              = analyze_deepdive(result)
+               generate_report(result, diag=diag, output_dir=output_dir, client_name="bradesco")
+# outputs em: outputs/bradesco_eletromidia/
 ```
 
 ### 8.3 Batch Multi-Cliente
@@ -391,12 +412,15 @@ ROAS Index é **relativo ao canal** — não é ROAS absoluto. Valor 1.4 = 40% m
 
 ### Arquivos por Cliente
 
+Output dir: `outputs/{cliente}_{vehicle}/`
+
 | Arquivo | Conteúdo |
 |---|---|
-| `outputs/{cliente}/{cliente}_shares.csv` | dim, item, contrib_share, spend_share, proxy_ratio, csl_max_dev |
-| `outputs/{cliente}/{cliente}_roas_index.csv` | dim, item, roas_index |
-| `outputs/{cliente}/{cliente}_contributions.html` | Barra agrupada: contrib_share vs. spend_share |
-| `outputs/{cliente}/{cliente}_roas_index.html` | Heatmap ROAS Index por dimensão × sub-canal |
+| `metadata.csv` | model_name, client, vehicle, upgrade_run_id, dd_date, period_start, period_end |
+| `{cliente}_shares.csv` | dim, item, contrib_share, spend_share, proxy_ratio, csl_max_dev |
+| `{cliente}_roas_index.csv` | dim, item, roas_index |
+| `{cliente}_contributions.html` | Barra agrupada: contrib_share vs. spend_share |
+| `{cliente}_roas_index.html` | Heatmap ROAS Index por dimensão × sub-canal |
 
 ### Batch
 

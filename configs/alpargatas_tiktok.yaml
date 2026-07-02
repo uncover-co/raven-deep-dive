@@ -1,0 +1,24 @@
+# Client config — Alpargatas, TikTok Deep Dive
+
+brand: alpargatas
+vehicle: tiktok
+model_name: "Sales AS Total Retail - Nacional"
+
+vehicle_specs_path: "../data/vehicle_specs.yaml"
+
+model_type: meridian
+
+mlflow_tracking_uri: "https://mlflow-dev.cloud.uncover.co"
+upgrade_run_id: "e3f67713b35e4f0084179503101732d8"   
+
+workspace_dd: "ba---tiktok---deepdive"          
+start_date: "2023-06-05"            
+end_date:   "2025-11-24"            
+
+media_var: "tiktok ads"             
+
+dimensions: null
+
+share_prior_scale: 0.05
+proxy_ct_tolerance: 0.15
+num_steps: 30000

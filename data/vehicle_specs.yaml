@@ -324,3 +324,96 @@ vehicles:
           ambientes:
             - shoppings-experiencia
 
+  tiktok:
+    vehicle_slug: tiktok
+    default_metric: "w:investments---tiktok-mmm"
+    metrics:
+      stan:     "w:investments---tiktok-mmm"
+      meridian:
+        - "w:investments---tiktok-mmm"
+        - "w:impressions---tiktok-mmm"
+
+    # Modela só na granularidade máxima; campaign_category e product_level_1
+    # são derivados por rollup via hierarquia declarada em product_level_4.
+    model_dims:
+      - product_level_4
+
+    models:
+      stan:
+        default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
+      meridian:
+        default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
+
+    breakdowns:
+      product_level_1:
+        category: product-level-2
+        values:
+          - branding
+          - performance
+
+      campaign_category:
+        category: campaign-category
+        templates:
+          stan:    "$metric:{metric}$category:brand:{brand}$category:{category}:{value}$category:product-level-1:tiktok"
+          meridian: "$metric:{metric}$category:brand:{brand}$category:{category}:{value}$category:product-level-1:tiktok"
+        values:
+          - brand-auction
+          - brand-reservation
+          - performance-auction
+          - reach-frequency
+
+      product_level_4:
+        category: product-level-4
+        rollups:
+          - level: campaign_category
+            map: pl4_to_campaign_category
+          - level: product_level_1
+            map: pl4_to_pl1
+        values:
+          - "-"
+          - android-mai
+          - app-retargeting
+          - app-traffic
+          - brand-auction--community-interaction-
+          - brand-auction--reach-
+          - brand-auction--videoview-
+          - openscreen
+          - standard-feed
+          - top-feed
+          - vsa--non-shop--app
+          - web-conversions
+          - web-traffic
+          - web-vbo
+
+    hierarchy:
+      pl4_to_campaign_category:
+        "-":                                  outros
+        android-mai:                          performance-auction
+        app-retargeting:                      performance-auction
+        app-traffic:                          performance-auction
+        brand-auction--community-interaction-: brand-auction
+        brand-auction--reach-:                brand-auction
+        brand-auction--videoview-:            brand-auction
+        openscreen:                           brand-reservation
+        standard-feed:                        reach-frequency
+        top-feed:                             reach-frequency
+        vsa--non-shop--app:                   performance-auction
+        web-conversions:                      performance-auction
+        web-traffic:                          performance-auction
+        web-vbo:                              performance-auction
+
+      pl4_to_pl1:
+        "-":                                  outros
+        android-mai:                          performance
+        app-retargeting:                      performance
+        app-traffic:                          performance
+        brand-auction--community-interaction-: branding
+        brand-auction--reach-:                branding
+        brand-auction--videoview-:            branding
+        openscreen:                           branding
+        standard-feed:                        branding
+        top-feed:                             branding
+        vsa--non-shop--app:                   performance
+        web-conversions:                      performance
+        web-traffic:                          performance
+        web-vbo:                              performance
