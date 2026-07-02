@@ -84,7 +84,7 @@ def run_diagnostics(
                 excl.append(slug)
 
         if kept:
-            if excl:
+            if len(excl) > 1:
                 outros_col = f"__outros__{sanitize_dim_name(dim)}"
                 df[outros_col] = df[excl].sum(axis=1)
                 kept.append(outros_col)

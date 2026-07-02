@@ -13,11 +13,12 @@ def _make_fixtures():
     spend = pd.DataFrame({
         "invest:sp":  rng.random(52) * 1000,
         "invest:rj":  rng.random(52) * 200,
-        "invest:rec": rng.random(52) * 5,   # < 2% → outros
+        "invest:rec": rng.random(52) * 5,   # < 2% → excluded
+        "invest:go":  rng.random(52) * 5,   # < 2% → excluded
     }, index=idx)
     cfg = DeepDiveConfig(
         dims=["Praca"],
-        vars_per_dim={"Praca": ["invest:sp", "invest:rj", "invest:rec"]},
+        vars_per_dim={"Praca": ["invest:sp", "invest:rj", "invest:rec", "invest:go"]},
         media_var="eletro_total",
     )
     eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
@@ -40,14 +41,47 @@ def test_run_diagnostics_returns_types():
     assert isinstance(new_cfg, DeepDiveConfig)
 
 
-def test_tiny_var_bucketed_into_outros():
+def test_tiny_vars_bucketed_into_outros():
     cfg, upgrade = _make_fixtures()
     new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
     praca_vars = new_cfg.vars_per_dim.get("Praca", [])
-    # invest:rec < 2% → should NOT be in kept vars
+    # invest:rec, invest:go < 2% → should NOT be in kept vars
     assert "invest:rec" not in praca_vars
-    # __outros__ column should be added
+    assert "invest:go" not in praca_vars
+    # 2+ excluded vars → __outros__ column should be added
     assert any("__outros__" in v for v in praca_vars)
+    assert diag.bucketed.get("Praca") == ["invest:rec", "invest:go"]
+
+
+def test_single_excluded_var_not_bucketed():
+    idx = pd.date_range("2023-01-02", periods=52, freq="W-MON")
+    rng = np.random.default_rng(42)
+    spend = pd.DataFrame({
+        "invest:sp":  rng.random(52) * 1000,
+        "invest:rj":  rng.random(52) * 200,
+        "invest:rec": rng.random(52) * 5,   # < 2%, sole exclusion → just skipped
+    }, index=idx)
+    cfg = DeepDiveConfig(
+        dims=["Praca"],
+        vars_per_dim={"Praca": ["invest:sp", "invest:rj", "invest:rec"]},
+        media_var="eletro_total",
+    )
+    eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
+    contrib_df = spend.copy()
+    contrib_df["eletro_total"] = eletro
+    upgrade = UpgradeResult(
+        model=None,
+        contrib_df=contrib_df,
+        spend_df=spend,
+        mmm_config={},
+        y_hat=eletro,
+    )
+    new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    praca_vars = new_cfg.vars_per_dim.get("Praca", [])
+    # a single excluded var isn't a "group" → no __outros__, just dropped
+    assert "invest:rec" not in praca_vars
+    assert not any("__outros__" in v for v in praca_vars)
+    assert "Praca" not in diag.bucketed
 
 
 def test_spend_report_columns():
