@@ -7,18 +7,20 @@ model_name: "Stellantis | Fiat Pulse Vendas - Nacional | MeridianMMM - Modelo Pu
 
 vehicle_specs_path: "../data/vehicle_specs.yaml"
 
-model_type: stan
+model_type: meridian
 
 mlflow_tracking_uri: "https://mlflow-datascience.cloud.uncover.co"
 upgrade_run_id: "acd433eaabb74cb08c4680954d580a7c"   
 
-workspace_dd: "stellantis"          
+workspace_dd: "ba---tiktok---deepdive"
 start_date: "2024-01-01"            
 end_date:   "2026-03-23"            
 
-media_var: "$metric:investments$_connection:c8f08420-058c-49d5-8149-01b097f977ac$nameplate:institucional,pulse"             
+media_var: "TikTok"
 
 dimensions: null
+
+share_likelihood_metric: "w:impressions---tiktok-mmm"  # investimento tem share ruim/concentrado nessa conexão; exposição é proxy mais confiável
 
 share_prior_scale: 0.05
 proxy_ct_tolerance: 0.15

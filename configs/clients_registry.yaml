@@ -24,5 +24,7 @@ clients:
     vehicles:
       fastback:
         specs_path: "stellantis_fastback.yaml"
+        output_subdir: "Stellantis_Fastback"  # ambos vehicle: tiktok -> precisa distinguir a pasta de output
       pulse:
         specs_path: "stellantis_pulse.yaml"
+        output_subdir: "Stellantis_Pulse"

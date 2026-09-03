@@ -43,7 +43,38 @@ def run_diagnostics(
     skipped_dims: list[str] = []
     n_weeks = len(df)
 
-    for dim, slugs in config.vars_per_dim.items():
+    # Só as slugs da share_likelihood_metric entram no HHI/pct que decide
+    # keep/exclude/SKIP e, portanto, no que alimenta ContributionShareLikelihood
+    # (config.share_likelihood_metric, default = métrica com "invest" no nome).
+    # Outras métricas fetchadas pro mesmo dim (ex.: impressions no meridian)
+    # ainda aparecem no relatório como informação, mas não travam nada — uma
+    # quebra com investimento concentrado mas exposição bem distribuída não
+    # deve ser penalizada pela métrica que não está sendo modelada.
+    share_metric = config.share_likelihood_metric
+    metric_prefix = f"$metric:{share_metric}$" if share_metric else None
+
+    for dim, all_slugs in config.vars_per_dim.items():
+        if metric_prefix:
+            slugs = [s for s in all_slugs if s.startswith(metric_prefix)]
+            other_slugs = [s for s in all_slugs if not s.startswith(metric_prefix)]
+        else:
+            slugs, other_slugs = all_slugs, []
+
+        for slug in other_slugs:
+            if slug in df.columns:
+                s = df[slug]
+                d = {"total": float(s.sum()), "active": int((s > 0).sum())}
+            else:
+                d = {"total": 0.0, "active": 0}
+            rows.append(_make_row(
+                dim, slug, d, 0.0, n_weeks, float("nan"), rec="INFO", keep=False,
+                reason="outra métrica (não é share_likelihood_metric)", reason_code="other_metric",
+            ))
+
+        if not slugs:
+            skipped_dims.append(dim)
+            continue
+
         stats: dict[str, dict] = {}
         for slug in slugs:
             if slug in df.columns:
@@ -104,6 +135,8 @@ def run_diagnostics(
         brand=config.brand,
         vehicle=config.vehicle,
         model_type=config.model_type,
+        model_name=config.model_name,
+        share_likelihood_metric=config.share_likelihood_metric,
         share_prior_scale=config.share_prior_scale,
         proxy_ct_tolerance=config.proxy_ct_tolerance,
         num_steps=config.num_steps,
@@ -135,25 +168,34 @@ def _print_diagnosis(diag_df: pd.DataFrame, min_pct: float, hhi_threshold: float
     print(f"  {'Dimensão':<28}  {'Rec':>5}  {'HHI':>5}  {'Total':>6}  {'Mantém':>6}  {'Exclui':>6}")
     print(f"  {'─' * 68}")
     for dim, grp in diag_df.groupby("dim", sort=False):
-        rec = grp["rec"].iloc[0]
-        hhi = grp["hhi"].iloc[0]
-        n_tot = len(grp)
-        n_kp = int(grp["keep"].sum())
-        n_ex = n_tot - n_kp
-        flag = "[!]  " if rec == "SKIP" else "[ok] "
-        print(f"  {flag}{dim:<26}  {rec:>5}  {hhi:>5.2f}  {n_tot:>6}  {n_kp:>6}  {n_ex:>6}")
-        for _, row in grp[~grp["keep"]].iterrows():
+        info = grp[grp["rec"] == "INFO"]
+        main = grp[grp["rec"] != "INFO"]
+        if main.empty:
+            print(f"  [!]  {dim:<26}  sem dados da share_likelihood_metric — dimensão pulada")
+        else:
+            rec = main["rec"].iloc[0]
+            hhi = main["hhi"].iloc[0]
+            n_tot = len(main)
+            n_kp = int(main["keep"].sum())
+            n_ex = n_tot - n_kp
+            flag = "[!]  " if rec == "SKIP" else "[ok] "
+            print(f"  {flag}{dim:<26}  {rec:>5}  {hhi:>5.2f}  {n_tot:>6}  {n_kp:>6}  {n_ex:>6}")
+            for _, row in main[~main["keep"]].iterrows():
+                label = _slug_label(row["slug"])
+                print(f"       ↳ {label:<24}  {row['pct_dim']:>6.1%}  {row['reason']}")
+            outros_rows = main[main["slug"].str.startswith("__outros__") & main["keep"]]
+            for _, row in outros_rows.iterrows():
+                print(f"       → {'outros':<24}  {row['pct_dim']:>6.1%}  {row['reason']}")
+        for _, row in info.iterrows():
             label = _slug_label(row["slug"])
-            print(f"       ↳ {label:<24}  {row['pct_dim']:>6.1%}  {row['reason']}")
-        outros_rows = grp[grp["slug"].str.startswith("__outros__") & grp["keep"]]
-        for _, row in outros_rows.iterrows():
-            print(f"       → {'outros':<24}  {row['pct_dim']:>6.1%}  {row['reason']}")
+            print(f"       ·  {label:<24}  {row['reason']}")
     print("─" * w)
-    real_kept = diag_df[diag_df["keep"] & ~diag_df["slug"].str.startswith("__outros__")]
-    n_dd = diag_df[diag_df["rec"] == "DD"]["dim"].nunique()
-    n_sk = diag_df[diag_df["rec"] == "SKIP"]["dim"].nunique()
+    dd_df = diag_df[diag_df["rec"] != "INFO"]
+    real_kept = dd_df[dd_df["keep"] & ~dd_df["slug"].str.startswith("__outros__")]
+    n_dd = dd_df[dd_df["rec"] == "DD"]["dim"].nunique()
+    n_sk = dd_df[dd_df["rec"] == "SKIP"]["dim"].nunique()
     n_q = int(real_kept.shape[0])
-    n_outros = int(diag_df[diag_df["slug"].str.startswith("__outros__") & diag_df["keep"]].shape[0])
+    n_outros = int(dd_df[dd_df["slug"].str.startswith("__outros__") & dd_df["keep"]].shape[0])
     print(f"  Dimensões com DD: {n_dd}  |  SKIP: {n_sk}  |  Quebras mantidas: {n_q}  |  Grupos 'outros': {n_outros}")
     print("─" * w)
 

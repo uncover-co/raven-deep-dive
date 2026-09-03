@@ -21,6 +21,7 @@ class DeepDiveConfig:
     hhi_threshold: float = 0.85
     min_active_weeks: int = 2
     model_name: str = ""          # human-readable model identifier (e.g. "Transacoes CC PF - Nacional")
+    share_likelihood_metric: str = ""  # metric slug driving ContributionShareLikelihood (defaults to investments)
     vehicle_spec: dict = field(default_factory=dict)  # full spec from vehicle_specs.yaml
 
 
@@ -59,6 +60,29 @@ def _get_template(vehicle_spec: dict, breakdown_spec: dict, model_type: str = "s
     )
 
 
+def _resolve_metrics(vehicle_spec: dict, model_type: str) -> list[str]:
+    """Metrics fetched for this model_type. Can be several (e.g. meridian's
+    investments + impressions) — one of them later gets picked to drive
+    ContributionShareLikelihood, see resolve_share_likelihood_metric()."""
+    raw_metric = (
+        vehicle_spec.get("metrics", {}).get(model_type)
+        or vehicle_spec.get("default_metric", "investments")
+    )
+    return raw_metric if isinstance(raw_metric, list) else [raw_metric]
+
+
+def resolve_share_likelihood_metric(metrics: list[str], override: str | None) -> str:
+    """Pick which fetched metric feeds ContributionShareLikelihood.
+
+    Explicit `override` (client cfg's `share_likelihood_metric`) wins. Otherwise
+    default to the metric that looks like investments — it's always fetched,
+    regardless of vehicle — falling back to the first metric if none matches.
+    """
+    if override:
+        return override
+    return next((m for m in metrics if "invest" in m.lower()), metrics[0])
+
+
 def _build_stan_vars(
     vehicle_spec: dict, cfg: dict, dims: list[str] | None, model_type: str = "stan"
 ) -> dict[str, list[str]]:
@@ -69,12 +93,7 @@ def _build_stan_vars(
     """
     vehicle_slug = vehicle_spec.get("vehicle_slug", "eletromidia")
     brand = cfg.get("brand", "")
-    raw_metric = (
-        vehicle_spec.get("metrics", {}).get(model_type)
-        or vehicle_spec.get("default_metric", "investments")
-    )
-    # metrics entry can be str (single) or list (e.g. meridian uses investments + impressions)
-    metrics = raw_metric if isinstance(raw_metric, list) else [raw_metric]
+    metrics = _resolve_metrics(vehicle_spec, model_type)
 
     all_breakdowns = vehicle_spec.get("breakdowns", {})
     # Default: model_dims from vehicle_spec (avoids Estado/Vertical/Tipo being modeled separately).
@@ -154,6 +173,10 @@ def build_config(
     vars_per_dim = _build_stan_vars(vehicle_spec, cfg, dims_override, model_type=model_type)
     dims = list(vars_per_dim.keys())
 
+    share_likelihood_metric = resolve_share_likelihood_metric(
+        _resolve_metrics(vehicle_spec, model_type), cfg.get("share_likelihood_metric")
+    )
+
     media_var = media_var_override or cfg.get("media_var")
     if not media_var:
         raise ValueError(
@@ -170,6 +193,7 @@ def build_config(
         vehicle=vehicle_key,
         model_type=model_type,
         model_name=cfg.get("model_name", ""),
+        share_likelihood_metric=share_likelihood_metric,
         share_prior_scale=cfg.get("share_prior_scale", 0.05),
         proxy_ct_tolerance=cfg.get("proxy_ct_tolerance", 0.15),
         num_steps=cfg.get("num_steps", 30_000),
