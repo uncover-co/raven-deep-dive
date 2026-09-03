@@ -18,34 +18,11 @@
 # To run one specific vehicle:        clients=["bradesco_tiktok"]
 
 clients:
-  bradesco:
-    output_subdir: "Bradesco"
-    vehicles:
-      eletromidia:
-        specs_path: "bradesco_eletro.yaml"
-      tiktok:
-        specs_path: "bradesco_tiktok.yaml"
 
-  casas_bahia:
-    output_subdir: "Casas_Bahia"
+  stellantis:
+    output_subdir: "Stellantis"
     vehicles:
-      tiktok:
-        specs_path: "casas_bahia_tiktok.yaml"
-
-  alpargatas:
-    output_subdir: "Alpargatas"
-    vehicles:
-      tiktok:
-        specs_path: "alpargatas_tiktok.yaml"
-
-  hypera:
-    output_subdir: "Hypera"
-    vehicles:
-      eletromidia:
-        specs_path: "hypera_eletro.yaml"  # TODO: fill media_var e workspace_dd
-
-  opella:
-    output_subdir: "Opella"
-    vehicles:
-      eletromidia:
-        specs_path: "opella_eletro.yaml"  # TODO: fill media_var e workspace_dd
+      fastback:
+        specs_path: "stellantis_fastback.yaml"
+      pulse:
+        specs_path: "stellantis_pulse.yaml"

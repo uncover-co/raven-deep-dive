@@ -60,10 +60,15 @@ def _get_template(vehicle_spec: dict, breakdown_spec: dict, model_type: str = "s
 
 
 def _build_stan_vars(
-    vehicle_spec: dict, brand: str, dims: list[str] | None, model_type: str = "stan"
+    vehicle_spec: dict, cfg: dict, dims: list[str] | None, model_type: str = "stan"
 ) -> dict[str, list[str]]:
-    """Build {dimension_name: [slug, ...]} mapping from vehicle spec."""
+    """Build {dimension_name: [slug, ...]} mapping from vehicle spec.
+
+    Any scalar field in the client `cfg` (brand, nameplate, etc.) is available to
+    templates as a placeholder — new per-vehicle template variables need no code change.
+    """
     vehicle_slug = vehicle_spec.get("vehicle_slug", "eletromidia")
+    brand = cfg.get("brand", "")
     raw_metric = (
         vehicle_spec.get("metrics", {}).get(model_type)
         or vehicle_spec.get("default_metric", "investments")
@@ -96,13 +101,14 @@ def _build_stan_vars(
         slugs = []
         for metric in metrics:
             for value in values:
-                slug = template.format(
-                    metric=metric,
-                    vehicle=vehicle_slug,
-                    brand=brand,
-                    category=category,
-                    value=value,
-                )
+                slug = template.format(**{
+                    **cfg,
+                    "metric": metric,
+                    "vehicle": vehicle_slug,
+                    "brand": brand,
+                    "category": category,
+                    "value": value,
+                })
                 slugs.append(slug)
         if slugs:
             result[bd_name] = slugs
@@ -145,7 +151,7 @@ def build_config(
     vehicle_spec = vehicle_specs["vehicles"][vehicle_key]
     model_type = cfg.get("model_type", "stan")
 
-    vars_per_dim = _build_stan_vars(vehicle_spec, brand, dims_override, model_type=model_type)
+    vars_per_dim = _build_stan_vars(vehicle_spec, cfg, dims_override, model_type=model_type)
     dims = list(vars_per_dim.keys())
 
     media_var = media_var_override or cfg.get("media_var")

@@ -183,19 +183,30 @@ def run_deep_dive_batch(
 
 # ── Hierarchy rollups ─────────────────────────────────────────────────────────
 
-def _build_slug_extractor(vehicle_spec: dict, category: str):
-    """Build a slug→value extractor from model templates in vehicle_spec."""
+def _build_slug_extractor(vehicle_spec: dict, bd_spec: dict):
+    """Build a slug→value extractor from templates in vehicle_spec.
+
+    Tries the breakdown's own `templates` override (any model_type) before the
+    vehicle's shared default_template/state_template — mirrors the priority
+    order in config._get_template(), so a breakdown with a fully custom slug
+    shape (e.g. extra $key:value segments) still extracts correctly.
+    """
+    category = bd_spec.get("category", "")
     patterns = []
+
+    template_sources = list(bd_spec.get("templates", {}).values())
     for model_spec in vehicle_spec.get("models", {}).values():
         for tmpl_key in ("default_template", "state_template"):
-            tmpl = model_spec.get(tmpl_key, "")
-            for segment in tmpl.split("$"):
-                if "{value}" not in segment:
-                    continue
-                pat = segment.replace("{category}", _re.escape(category))
-                pat = _re.sub(r"\{(?!value\})[^}]+\}", r"[^$]+", pat)
-                pat = pat.replace("{value}", r"([^$]+)")
-                patterns.append(_re.compile(r"\$" + pat))
+            template_sources.append(model_spec.get(tmpl_key, ""))
+
+    for tmpl in template_sources:
+        for segment in tmpl.split("$"):
+            if "{value}" not in segment:
+                continue
+            pat = segment.replace("{category}", _re.escape(category))
+            pat = _re.sub(r"\{(?!value\})[^}]+\}", r"[^$]+", pat)
+            pat = pat.replace("{value}", r"([^$]+)")
+            patterns.append(_re.compile(r"\$" + pat))
 
     def extract(slug: str) -> str | None:
         for p in patterns:
@@ -326,7 +337,7 @@ def rollup_dim(
     category     = bd_spec.get("category", "")
     rollup_specs = bd_spec.get("rollups", [])
     hierarchy    = vehicle_spec.get("hierarchy", {})
-    extract      = _build_slug_extractor(vehicle_spec, category) if category else lambda slug: None
+    extract      = _build_slug_extractor(vehicle_spec, bd_spec) if category else lambda slug: None
 
     def _key(slug: str) -> str:
         return extract(slug) or slug.split(":")[-1]
@@ -415,7 +426,7 @@ def rollup_contribs_ts(
     category = bd_spec.get("category", "")
     rollup_specs = bd_spec.get("rollups", [])
     hierarchy = vehicle_spec.get("hierarchy", {})
-    extract = _build_slug_extractor(vehicle_spec, category) if category else lambda _: None
+    extract = _build_slug_extractor(vehicle_spec, bd_spec) if category else lambda _: None
 
     def _value(slug: str) -> str:
         return extract(slug) or slug.split(":")[-1]
