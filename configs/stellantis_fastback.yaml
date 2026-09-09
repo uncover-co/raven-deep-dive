@@ -1,7 +1,7 @@
 # Client config — Stellantis, TikTok Deep Dive
 
 brand: stellantis
-vehicle: tiktok
+vehicle: tiktok_stellantis
 nameplate: "institucional,fastback"
 model_name: "Stellantis | Fiat Fastback - Vendas - Nacional | StanMMM - Modelo Fastback - DD"
 
@@ -10,15 +10,17 @@ vehicle_specs_path: "../data/vehicle_specs.yaml"
 model_type: stan
 
 mlflow_tracking_uri: "https://mlflow-datascience.cloud.uncover.co"
-upgrade_run_id: "d370d87f5be34e1095593d4ee3a673df"   
+upgrade_run_id: "a634ffc4dc8b469cb9a050a3aa62d500"   
 
 workspace_dd: "ba---tiktok---deepdive"         
 start_date: "2024-01-01"            
-end_date:   "2025-12-22"            
+end_date:   "2026-03-29"            
 
 media_var: "$metric:investments$_connection:c8f08420-058c-49d5-8149-01b097f977ac$nameplate:institucional,fastback"             
 
 dimensions: null
+
+auxiliary_metric: "w:impressions---tiktok-mmm"
 
 share_prior_scale: 0.05
 proxy_ct_tolerance: 0.15

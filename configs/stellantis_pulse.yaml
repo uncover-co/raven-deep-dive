@@ -1,7 +1,7 @@
 # Client config — Stellantis, TikTok Deep Dive
 
 brand: stellantis
-vehicle: tiktok
+vehicle: tiktok_stellantis
 nameplate: "institucional,pulse"
 model_name: "Stellantis | Fiat Pulse Vendas - Nacional | MeridianMMM - Modelo Pulse - DD"
 
@@ -20,8 +20,8 @@ media_var: "TikTok"
 
 dimensions: null
 
-share_likelihood_metric: "w:impressions---tiktok-mmm"  # investimento tem share ruim/concentrado nessa conexão; exposição é proxy mais confiável
+auxiliary_metric: "w:impressions---tiktok-mmm"  # só como prior + guardrail (nunca regressor) — ver diagnostics.py
 
 share_prior_scale: 0.05
 proxy_ct_tolerance: 0.15
-num_steps: 30000
+num_steps: 100000

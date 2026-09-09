@@ -4,15 +4,12 @@ vehicles:
     vehicle_slug: tiktok
     default_metric: "w:investments---tiktok-mmm"
     metrics:
-      stan:     "w:investments---tiktok-mmm"
+      stan:
+        - "w:investments---tiktok-mmm"
+        - "w:impressions---tiktok-mmm"
       meridian:
         - "w:investments---tiktok-mmm"
         - "w:impressions---tiktok-mmm"
-
-    # Modela só na granularidade máxima; product_level_2 é derivado por rollup
-    # via hierarquia declarada em product_level_3 (padrão Stellantis fastback/pulse).
-    model_dims:
-      - product_level_3
 
     models:
       stan:
@@ -56,9 +53,33 @@ vehicles:
           - web-traffic
           - web-vbo
 
-      # Stellantis (fastback/pulse), conexão TikTok separada por nameplate — mesma
-      # dimensão pros dois, {nameplate} vem do client config (institucional,fastback
-      # / institucional,pulse).
+  # Stellantis (fastback/pulse) — conexão TikTok própria, dedicada por nameplate
+  # (institucional,fastback / institucional,pulse). Vehicle key separada da
+  # `tiktok` genérica para não vazar model_dims/connection id pros outros
+  # clientes tiktok (casas_bahia, bradesco, alpargatas).
+  tiktok_stellantis:
+    vehicle_slug: tiktok
+    default_metric: "w:investments---tiktok-mmm"
+    metrics:
+      stan:
+        - "w:investments---tiktok-mmm"
+        - "w:impressions---tiktok-mmm"
+      meridian:
+        - "w:investments---tiktok-mmm"
+        - "w:impressions---tiktok-mmm"
+
+    # Modela só na granularidade máxima; product_level_2 é derivado por rollup
+    # via hierarquia declarada em product_level_3.
+    model_dims:
+      - product_level_3
+
+    models:
+      stan:
+        default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
+      meridian:
+        default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
+
+    breakdowns:
       product_level_2:
         category: product-level-2--old-
         templates:
@@ -82,10 +103,14 @@ vehicles:
           - openscreen
           - reach---frequency
           - web-ads---open-loop-e-commerce
+          - lead-ads
+          - promote--rest-
 
     hierarchy:
       pl3_to_pl2:
         brand-auction:                  branding
         openscreen:                     branding
         reach---frequency:              branding
+        promote--rest-:                 branding
         web-ads---open-loop-e-commerce: performance
+        lead-ads:                       performance
