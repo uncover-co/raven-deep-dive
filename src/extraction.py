@@ -143,17 +143,115 @@ def load_meridian_upgrade(
     )
 
 
-def load_raven_upgrade(run_id: str, tracking_uri: str | None = None) -> UpgradeResult:
+def load_raven_upgrade(
+    run_id: str,
+    tracking_uri: str | None = None,
+    cache_dir: str | None = None,
+) -> UpgradeResult:
     """Load a Raven (mmmverse/prophetverse) upgrade run from MLflow.
 
-    Not yet implemented — no standardized MLflow artifact path for Raven models.
-    Once a Raven run_id is available, implement contrib extraction via predict_components.
+    Note: the artifact store backing some Raven runs may require AWS SSO
+    (`aws sso login`) rather than the static keys used for Stan/Meridian.
     """
-    raise NotImplementedError(
-        "Raven upgrade extraction not yet implemented. "
-        "Raven (mmmverse) models don't have a standardized MLflow artifact path yet. "
-        "To implement: load the fitted Raven model, call predict_components(), "
-        "and extract the target channel contribution series."
+    if tracking_uri:
+        mlflow.set_tracking_uri(tracking_uri)
+
+    client = mlflow.tracking.MlflowClient()
+
+    if cache_dir:
+        dst = os.path.join(cache_dir, run_id)
+        os.makedirs(dst, exist_ok=True)
+        export_cached = os.path.join(dst, "export_data.parquet")
+        input_cached = os.path.join(dst, "input_data.parquet")
+        if os.path.exists(export_cached):
+            print(f"[cache] {dst}")
+            export_path, input_path = export_cached, input_cached
+        else:
+            import shutil, tempfile
+            _tmp = tempfile.mkdtemp()
+            export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
+            input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+            shutil.copy(export_path, export_cached)
+            shutil.copy(input_path, input_cached)
+    else:
+        import tempfile
+        _tmp = tempfile.mkdtemp()
+        export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
+        input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+
+    export = pd.read_parquet(export_path)
+    inp = pd.read_parquet(input_path)
+    if "timestamp" in inp.columns:
+        inp = inp.sort_values("timestamp")
+
+    def _weekly(metric_type: str, agg: str) -> pd.DataFrame:
+        rows = export[export["metric_type"] == metric_type].copy()
+        rows["timestamp"] = pd.to_datetime(rows["timestamp"]).dt.to_period("W-MON").dt.start_time
+        df = rows.groupby(["timestamp", "variable_name"])["value"].agg(agg).unstack("variable_name")
+        df.index = pd.DatetimeIndex(df.index).normalize()
+        df.index.name = None
+        return df
+
+    contrib_raw = _weekly("Contribution Unadstocked", "sum").fillna(0.0)
+    eff_scaler = _weekly("Efficiency Scaler", "mean")["efficiency_scaler"]
+
+    # `Contribution Unadstocked` is logged daily and can include a stray
+    # leading day that buckets into an extra partial week not present in
+    # `Efficiency Scaler` (logged already weekly) — e.g. one December day
+    # rolling into a "W-MON" period bucket before the real data starts.
+    # Align the two to each other (both went through the same `_weekly`
+    # bucketing, so their index labels are mutually consistent even though
+    # — like `_load_from_parquets` — that bucketing lands 1 day off from
+    # input_data.parquet's own timestamps; don't compare labels against
+    # `inp` directly).
+    extra_weeks = contrib_raw.index.difference(eff_scaler.index)
+    if len(extra_weeks) > 0:
+        contrib_raw = contrib_raw.drop(index=extra_weeks)
+    missing_weeks = eff_scaler.index.difference(contrib_raw.index)
+    if len(missing_weeks) > 0:
+        raise ValueError(
+            f"run {run_id}: 'Efficiency Scaler' has weeks {list(missing_weeks)} "
+            "with no matching 'Contribution Unadstocked' data."
+        )
+
+    contrib_df = contrib_raw.mul(eff_scaler.reindex(contrib_raw.index), axis=0)
+    y_hat = contrib_df.sum(axis=1).rename(None)
+
+    n_inp, n_contrib = len(inp), len(contrib_df)
+    if n_contrib == n_inp + 1:
+        contrib_df = contrib_df.iloc[1:]
+        y_hat = contrib_df.sum(axis=1).rename(None)
+    elif n_contrib != n_inp:
+        raise ValueError(
+            f"input_data has {n_inp} rows but contrib_df has {n_contrib} after aligning "
+            "to Efficiency Scaler. Positional alignment requires the same number of "
+            "weeks (tolerance: +1)."
+        )
+
+    target_rows = export[export["metric_type"] == "Target Prediction"]
+    if target_rows.empty:
+        raise ValueError(
+            f"No 'Target Prediction' rows in export_data.parquet for run {run_id} — "
+            "cannot resolve the KPI column name in input_data.parquet."
+        )
+    target_var = target_rows["variable_name"].iloc[0]
+    if target_var not in inp.columns:
+        raise ValueError(
+            f"Target variable '{target_var}' (from 'Target Prediction' in export_data.parquet) "
+            f"not found in input_data.parquet columns for run {run_id}."
+        )
+    y_actual = pd.Series(inp[target_var].values, index=contrib_df.index, name=None)
+
+    mmm_config = dict(client.get_run(run_id).data.params)
+
+    return UpgradeResult(
+        model=None,
+        contrib_df=contrib_df,
+        spend_df=pd.DataFrame(),
+        mmm_config=mmm_config,
+        y_hat=y_hat,
+        model_type="raven",
+        y_actual=y_actual,
     )
 
 
