@@ -224,8 +224,10 @@ Campos de `DeepDiveConfig` configuráveis via YAML:
 
 | Campo | Default | Descrição |
 |---|---|---|
-| `model_type` | `"stan"` | `"stan"`, `"meridian"` ou `"raven"` — controla extração e quais métricas são buscadas; o template de slug é único por veículo, não varia por `model_type` |
+| `model_type` | `"stan"` | `"stan"`, `"meridian"` ou `"raven"` — controla só de onde vem a extração do modelo âncora; template de slug é único por veículo, e métricas buscadas são `default_metric` do veículo + `auxiliary_metric` do cliente, nenhum dos dois varia por `model_type` |
 | `model_name` | `""` | Identificador legível do modelo upstream (ex: `"Transacoes CC PF - Nacional"`) |
+| `share_likelihood_metric` | `""` | Override do metric slug que vira regressor da curva Hill (default: o que tem "invest" no nome) |
+| `auxiliary_metric` | `""` | Metric slug de exposição (ex: impressions) usado como prior do CSL + guardrail do diagnóstico. Vazio → aviso no log, cai no fallback de investimento |
 | `share_prior_scale` | `0.05` | Escala do CSL (0.005 com dados auxiliares) |
 | `proxy_ct_tolerance` | `0.15` | Tolerância ±% da âncora `C_t` |
 | `num_steps` | `30_000` | Steps de otimização MAP por dimensão |

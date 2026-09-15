@@ -62,15 +62,15 @@ def _get_template(vehicle_spec: dict, breakdown_spec: dict) -> str:
     raise ValueError(f"No template defined for category='{category}'.")
 
 
-def _resolve_metrics(vehicle_spec: dict, model_type: str) -> list[str]:
-    """Metrics fetched for this model_type. Can be several (e.g. meridian's
-    investments + impressions) — one of them later gets picked to drive
-    ContributionShareLikelihood, see resolve_share_likelihood_metric()."""
-    raw_metric = (
-        vehicle_spec.get("metrics", {}).get(model_type)
-        or vehicle_spec.get("default_metric", "investments")
-    )
-    return raw_metric if isinstance(raw_metric, list) else [raw_metric]
+def _resolve_metrics(vehicle_spec: dict, auxiliary_metric: str) -> list[str]:
+    """Metrics fetched for every breakdown slug: the vehicle's primary
+    (investment) metric, plus the client's auxiliary exposure metric when
+    set — independent of which model anchors it (stan/meridian/raven).
+    Falls back to just the primary metric otherwise (build_config warns)."""
+    primary = vehicle_spec.get("default_metric", "investments")
+    if auxiliary_metric and auxiliary_metric != primary:
+        return [primary, auxiliary_metric]
+    return [primary]
 
 
 def resolve_share_likelihood_metric(metrics: list[str], override: str | None) -> str:
@@ -81,12 +81,18 @@ def resolve_share_likelihood_metric(metrics: list[str], override: str | None) ->
     regardless of vehicle — falling back to the first metric if none matches.
     """
     if override:
+        if override not in metrics:
+            raise ValueError(
+                f"share_likelihood_metric override '{override}' is not one of "
+                f"the fetched metrics {metrics} (vehicle's default_metric + "
+                "client's auxiliary_metric)."
+            )
         return override
     return next((m for m in metrics if "invest" in m.lower()), metrics[0])
 
 
-def _build_stan_vars(
-    vehicle_spec: dict, cfg: dict, dims: list[str] | None, model_type: str = "stan"
+def _build_vars_per_dim(
+    vehicle_spec: dict, cfg: dict, dims: list[str] | None
 ) -> dict[str, list[str]]:
     """Build {dimension_name: [slug, ...]} mapping from vehicle spec.
 
@@ -95,7 +101,7 @@ def _build_stan_vars(
     """
     vehicle_slug = vehicle_spec.get("vehicle_slug", "eletromidia")
     brand = cfg.get("brand", "")
-    metrics = _resolve_metrics(vehicle_spec, model_type)
+    metrics = _resolve_metrics(vehicle_spec, cfg.get("auxiliary_metric", ""))
 
     all_breakdowns = vehicle_spec.get("breakdowns", {})
     # Default: model_dims from vehicle_spec (avoids Estado/Vertical/Tipo being modeled separately).
@@ -171,12 +177,18 @@ def build_config(
         )
     vehicle_spec = vehicle_specs["vehicles"][vehicle_key]
     model_type = cfg.get("model_type", "stan")
+    auxiliary_metric = cfg.get("auxiliary_metric", "")
+    if not auxiliary_metric:
+        print(
+            f"  [WARNING] '{specs_path}': auxiliary_metric não definido — "
+            "share likelihood cai no fallback de investimento (ver README)."
+        )
 
-    vars_per_dim = _build_stan_vars(vehicle_spec, cfg, dims_override, model_type=model_type)
+    vars_per_dim = _build_vars_per_dim(vehicle_spec, cfg, dims_override)
     dims = list(vars_per_dim.keys())
 
     share_likelihood_metric = resolve_share_likelihood_metric(
-        _resolve_metrics(vehicle_spec, model_type), cfg.get("share_likelihood_metric")
+        _resolve_metrics(vehicle_spec, auxiliary_metric), cfg.get("share_likelihood_metric")
     )
 
     media_var = media_var_override or cfg.get("media_var")
@@ -196,7 +208,7 @@ def build_config(
         model_type=model_type,
         model_name=cfg.get("model_name", ""),
         share_likelihood_metric=share_likelihood_metric,
-        auxiliary_metric=cfg.get("auxiliary_metric", ""),
+        auxiliary_metric=auxiliary_metric,
         share_prior_scale=cfg.get("share_prior_scale", 0.05),
         proxy_ct_tolerance=cfg.get("proxy_ct_tolerance", 0.15),
         num_steps=cfg.get("num_steps", 30_000),

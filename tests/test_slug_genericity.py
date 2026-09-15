@@ -1,4 +1,4 @@
-"""Smoke tests: does build_config/_build_stan_vars correctly construct slugs
+"""Smoke tests: does build_config/_build_vars_per_dim correctly construct slugs
 for arbitrary vehicle_specs.yaml patterns — not just the 3 real vehicles
 (eletromidia, tiktok, tiktok_stellantis) currently in data/vehicle_specs.yaml?
 
@@ -14,8 +14,9 @@ model_type -- confirmed with real data (see docstring in config._get_template)
 that the Uncover Webserver API parses slug segments as an unordered
 key:value set, not a literal string match, so a stan/meridian split in
 models: or a breakdown template only ever reordered the same segments.
-metrics: (which metrics get fetched) is a separate, still model_type-keyed
-concern -- not tested here, unaffected by this simplification.
+metrics: (which metrics get fetched) is likewise independent of model_type
+-- the vehicle's default_metric plus the client's auxiliary_metric, when
+set; model_type only picks which upstream MLflow artifacts to load.
 """
 import os
 import sys
@@ -26,7 +27,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from config import build_config, _build_stan_vars
+from config import build_config, _build_vars_per_dim
 
 
 class _FakeUpgrade:
@@ -68,26 +69,28 @@ def test_basic_single_metric_single_template(tmp_path):
     ]
 
 
-# ── Case B: multiple metrics fetched for one model_type ──────────────────────
+# ── Case B: default_metric + client's auxiliary_metric cross product ────────
 
-def test_multi_metric_list_cross_product(tmp_path):
+def test_default_metric_plus_auxiliary_metric_cross_product(tmp_path):
     vehicle_spec = {
         "vehicle_slug": "fake",
-        "metrics": {"stan": ["spend", "clicks", "reach"]},
+        "default_metric": "spend",
         "models": {"default_template": "$metric:{metric}$category:{category}:{value}"},
         "breakdowns": {"Channel": {"category": "channel", "values": ["a", "b"]}},
     }
     specs_path = _write_specs(tmp_path, "fake_multi", vehicle_spec)
     client_path = _write_client(
         tmp_path, vehicle="fake_multi", vehicle_specs_path=os.path.basename(specs_path),
-        model_type="stan", media_var="total",
+        model_type="stan", media_var="total", auxiliary_metric="reach",
     )
     config = build_config(_FakeUpgrade(), client_path)
-    # 3 metrics x 2 values = 6 slugs, order = outer loop over metrics
-    assert len(config.vars_per_dim["Channel"]) == 6
-    assert config.vars_per_dim["Channel"][0] == "$metric:spend$category:channel:a"
-    assert config.vars_per_dim["Channel"][2] == "$metric:clicks$category:channel:a"
-    assert config.vars_per_dim["Channel"][4] == "$metric:reach$category:channel:a"
+    # 2 metrics (default + auxiliary) x 2 values, order = outer loop over metrics
+    assert config.vars_per_dim["Channel"] == [
+        "$metric:spend$category:channel:a",
+        "$metric:spend$category:channel:b",
+        "$metric:reach$category:channel:a",
+        "$metric:reach$category:channel:b",
+    ]
 
 
 # ── Case C: custom template placeholder beyond metric/vehicle/brand/category/value ──
@@ -199,11 +202,13 @@ def test_model_dims_default_vs_explicit_dimensions_override(tmp_path):
     assert config_override.dims == ["C"]
 
 
-# ── Case F: template is the same regardless of model_type ───────────────────
+# ── Case F: template and metrics are the same regardless of model_type ──────
 
-def test_template_independent_of_model_type(tmp_path):
-    """models: is a single flat template, not keyed by stan/meridian — the
-    same slug comes out no matter what model_type the client declares."""
+def test_template_and_metrics_independent_of_model_type(tmp_path):
+    """models: is a single flat template, not keyed by stan/meridian, and
+    metrics fetched = default_metric + auxiliary_metric (client cfg) — same
+    slugs come out no matter what model_type the client declares, since
+    model_type only picks which upstream MLflow artifacts to load."""
     vehicle_spec = {
         "vehicle_slug": "fake",
         "default_metric": "spend",
@@ -215,18 +220,19 @@ def test_template_independent_of_model_type(tmp_path):
     stan_client = _write_client(
         tmp_path, filename="client_stan.yaml",
         vehicle="fake_dual", vehicle_specs_path=os.path.basename(specs_path),
-        model_type="stan", media_var="total",
+        model_type="stan", media_var="total", auxiliary_metric="reach",
     )
     meridian_client = _write_client(
         tmp_path, filename="client_meridian.yaml",
         vehicle="fake_dual", vehicle_specs_path=os.path.basename(specs_path),
-        model_type="meridian", media_var="total",
+        model_type="meridian", media_var="total", auxiliary_metric="reach",
     )
 
     config_stan = build_config(_FakeUpgrade(), stan_client)
     config_meridian = build_config(_FakeUpgrade(), meridian_client)
     assert config_stan.vars_per_dim["Ch"] == config_meridian.vars_per_dim["Ch"] == [
         "$metric:spend$marker$category:ch:a",
+        "$metric:reach$marker$category:ch:a",
     ]
 
 
@@ -240,7 +246,7 @@ def test_breakdown_missing_category_raises():
         "breakdowns": {"Bad": {"values": ["a"]}},  # no "category"
     }
     with pytest.raises(ValueError, match="category"):
-        _build_stan_vars(vehicle_spec, {}, None, model_type="stan")
+        _build_vars_per_dim(vehicle_spec, {}, None)
 
 
 def test_breakdown_missing_values_raises():
@@ -251,4 +257,4 @@ def test_breakdown_missing_values_raises():
         "breakdowns": {"Bad": {"category": "bad"}},  # no "values"
     }
     with pytest.raises(ValueError, match="values"):
-        _build_stan_vars(vehicle_spec, {}, None, model_type="stan")
+        _build_vars_per_dim(vehicle_spec, {}, None)
