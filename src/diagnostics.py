@@ -15,7 +15,7 @@ from extraction import UpgradeResult
 @dataclass
 class DiagnosisResult:
     spend_report: pd.DataFrame       # per-var stats: share, HHI, semanas_ativas, keep
-    bucketed: dict[str, dict[str, list[str]]]  # dim -> {outros_col: [members]}; up to 2 per dim (lower/upper)
+    bucketed: dict[str, list[str]]  # dim -> variables bucketed into __outros__
     skipped_dims: list[str]          # dims skipped (HHI too high or < 2 active)
     auxiliary_metric_dfs: dict[str, pd.DataFrame] | None = None  # dim → df aligned to final kept cols (config.auxiliary_metric values), feeds ContributionShareLikelihood prior only
 
