@@ -7,7 +7,7 @@ vehicle_specs_path: "../data/vehicle_specs.yaml"
 
 model_type: stan
 
-mlflow_tracking_uri: "https://mlflow-dev.cloud.uncover.co"
+mlflow_tracking_uri: "https://mlflow-datascience.cloud.uncover.co"
 upgrade_run_id: "c21fe344b2954315aec5cc0eefbc9249"        
 
 
@@ -18,6 +18,18 @@ end_date:   "2025-08-11"
 media_var: "tiktok ads"             
 
 dimensions: null
+
+# Share likelihood deve usar exposição, não investimento (ver README).
+# No-op aqui: tiktok.metrics.stan só busca investments, nunca impressions
+# (só o meridian busca as duas) — precisaria ajustar vehicle_specs.yaml antes.
+auxiliary_metric: "w:impressions---tiktok-mmm"
+
+# Sub-canais de resposta imediata (sem adstock), via tiktok.hierarchy.pl4_to_pl1.
+# Validado com dado real (docs/deepdive-funnel-prior-exposure-findings.md).
+lower_funnel_vars_per_dim:
+  product_level_4:
+    - "$metric:w:investments---tiktok-mmm$category:brand:bradesco$category:product-level-1:tiktok$category:product-level-4:app-retargeting"
+    - "$metric:w:investments---tiktok-mmm$category:brand:bradesco$category:product-level-1:tiktok$category:product-level-4:web-traffic"
 
 share_prior_scale: 0.05
 proxy_ct_tolerance: 0.15

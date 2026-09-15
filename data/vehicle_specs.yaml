@@ -12,15 +12,14 @@ vehicles:
       - Midia
       - Modelo de Planejamento
 
-    # Cada modelo pode ter uma regra de slug diferente.
-    # Use {metric}, {vehicle}, {brand}, {category}, {value} nos templates.
+    # Um template só, independente de model_type (stan/meridian) — confirmado
+    # com dado real que a API (Uncover Webserver) parseia os segmentos $key:value
+    # como conjunto não-ordenado, não como string literal, então uma divisão
+    # stan/meridian aqui só reordenava os mesmos segmentos sem mudar o dado
+    # retornado. Use {metric}, {vehicle}, {brand}, {category}, {value}.
     models:
-      stan:
-        default_template: "$metric:{metric}$vehicle:{vehicle}$category:brand:{brand}$category:{category}:{value}"
-        state_template: "$metric:{metric}$state:{value}$vehicle:{vehicle}$category:brand:{brand}"
-      meridian:
-        default_template: "$metric:{metric}$category:brand:{brand}$category:{category}:{value}$vehicle:{vehicle}"
-        state_template: "$metric:{metric}$state:{value}$vehicle:{vehicle}$category:brand:{brand}"
+      default_template: "$metric:{metric}$vehicle:{vehicle}$category:brand:{brand}$category:{category}:{value}"
+      state_template: "$metric:{metric}$state:{value}$vehicle:{vehicle}$category:brand:{brand}"
 
     breakdowns:
       Praca:
@@ -99,8 +98,9 @@ vehicles:
             groups: grupos
             members_key: ambientes
             attr: tipo
-        templates:
-          meridian: "$metric:{metric}$category:ambiente:{value}$category:brand:{brand}$vehicle:{vehicle}"
+        # Sem override próprio: mesmos segmentos do default_template do
+        # veículo (só "category:ambiente:{value}" com {category} já resolvido
+        # pra "ambiente" — reordenação, não estrutura diferente).
         values:
           - abrigos-campinas
           - abrigos-fortaleza
@@ -339,10 +339,7 @@ vehicles:
       - product_level_4
 
     models:
-      stan:
-        default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
-      meridian:
-        default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
+      default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
 
     breakdowns:
       product_level_1:
@@ -353,9 +350,7 @@ vehicles:
 
       campaign_category:
         category: campaign-category
-        templates:
-          stan:    "$metric:{metric}$category:brand:{brand}$category:{category}:{value}$category:product-level-1:tiktok"
-          meridian: "$metric:{metric}$category:brand:{brand}$category:{category}:{value}$category:product-level-1:tiktok"
+        template: "$metric:{metric}$category:brand:{brand}$category:{category}:{value}$category:product-level-1:tiktok"
         values:
           - brand-auction
           - brand-reservation
