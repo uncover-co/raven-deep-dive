@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
-from extraction import UpgradeResult, load_upgrade_stan
+from extraction import UpgradeResult, load_upgrade_stan, load_raven_upgrade
 
 
 def test_upgrade_result_fields():
@@ -56,6 +56,53 @@ def test_load_upgrade_stan_with_mocks():
     assert result.spend_df.empty
     assert abs(float(result.y_hat.iloc[0]) - 15.0) < 1e-6   # 10 + 5
     assert abs(float(result.y_hat.iloc[1]) - 25.0) < 1e-6   # 20 + 5
+    assert result.y_actual is not None
+    assert abs(float(result.y_actual.iloc[0]) - 100.0) < 1e-6
+    assert abs(float(result.y_actual.iloc[1]) - 200.0) < 1e-6
+
+
+def test_load_raven_upgrade_with_mocks():
+    """Raven export_data.parquet/input_data.parquet follow the same convention
+    as Stan/Meridian, but need 2 adjustments (see
+    docs/deepdive-raven-upgrade-extraction-findings.md):
+      - y_actual resolved by NAME (via the 'Target Prediction' metric_type row),
+        not positionally (Raven's input_data.parquet doesn't put the KPI last).
+      - Contribution Unadstocked needs the weekly 'Efficiency Scaler' applied
+        to match the model's actual fitted values.
+    """
+    idx = pd.date_range("2023-01-02", periods=2, freq="W-MON")
+
+    export_rows = []
+    for ts, (a_val, b_val, eff) in zip(idx, [(10.0, 5.0, 2.0), (20.0, 5.0, 1.5)]):
+        export_rows.append({"timestamp": ts, "variable_name": "chan_a", "value": a_val, "metric_type": "Contribution Unadstocked"})
+        export_rows.append({"timestamp": ts, "variable_name": "chan_b", "value": b_val, "metric_type": "Contribution Unadstocked"})
+        export_rows.append({"timestamp": ts, "variable_name": "efficiency_scaler", "value": eff, "metric_type": "Efficiency Scaler"})
+        export_rows.append({"timestamp": ts, "variable_name": "kpi", "value": 0.0, "metric_type": "Target Prediction"})
+    export_df = pd.DataFrame(export_rows)
+
+    # KPI is NOT the last column — mirrors real Raven input_data.parquet layout.
+    input_df = pd.DataFrame({"timestamp": idx, "kpi": [100.0, 200.0], "other_col": [1.0, 2.0]})
+
+    with tempfile.TemporaryDirectory() as tmp:
+        export_path = os.path.join(tmp, "export_data.parquet")
+        input_path = os.path.join(tmp, "input_data.parquet")
+        export_df.to_parquet(export_path, index=False)
+        input_df.to_parquet(input_path, index=False)
+
+        fake_run = MagicMock()
+        fake_run.data.params = {"media_features": "chan_a,chan_b", "target": "kpi"}
+        mock_client = MagicMock()
+        mock_client.return_value.download_artifacts.side_effect = [export_path, input_path]
+        mock_client.return_value.get_run.return_value = fake_run
+
+        with patch("mlflow.tracking.MlflowClient", mock_client):
+            result = load_raven_upgrade("fake-run-id", tracking_uri="http://fake")
+
+    assert result.model_type == "raven"
+    assert list(result.contrib_df.columns) == ["chan_a", "chan_b"]
+    # y_hat = (chan_a + chan_b) * efficiency_scaler, per week
+    assert abs(float(result.y_hat.iloc[0]) - 15.0 * 2.0) < 1e-6   # (10+5)*2.0
+    assert abs(float(result.y_hat.iloc[1]) - 25.0 * 1.5) < 1e-6   # (20+5)*1.5
     assert result.y_actual is not None
     assert abs(float(result.y_actual.iloc[0]) - 100.0) < 1e-6
     assert abs(float(result.y_actual.iloc[1]) - 200.0) < 1e-6

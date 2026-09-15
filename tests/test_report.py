@@ -16,6 +16,8 @@ def _fake_result():
         shares_spend={"Praca": pd.Series({"sp": 0.60, "rj": 0.40})},
         proxy_ratios={"Praca": 0.98},
         csl_devs={"Praca": 0.04},
+        r2={"Praca": 0.9},
+        wape={"Praca": 0.1},
         media_dd_contrib=pd.Series(np.ones(10) * 150, index=idx),
         config=DeepDiveConfig(
             dims=["Praca"],
@@ -28,8 +30,7 @@ def _fake_result():
 def test_generate_report_creates_files():
     with tempfile.TemporaryDirectory() as tmpdir:
         paths = generate_report(_fake_result(), output_dir=tmpdir, client_name="Test")
-        assert os.path.exists(paths["csv_shares"])
-        assert os.path.exists(paths["csv_roas"])
+        assert os.path.exists(paths["csv_contributions"])
         assert os.path.exists(paths["html_contributions"])
         assert os.path.exists(paths["html_roas"])
 
@@ -38,14 +39,14 @@ def test_generate_report_returns_dict():
     with tempfile.TemporaryDirectory() as tmpdir:
         paths = generate_report(_fake_result(), output_dir=tmpdir)
         assert isinstance(paths, dict)
-        assert "csv_shares" in paths
-        assert "csv_roas" in paths
+        assert "csv_contributions" in paths
+        assert "html_roas" in paths
 
 
 def test_shares_csv_has_expected_columns():
     with tempfile.TemporaryDirectory() as tmpdir:
         paths = generate_report(_fake_result(), output_dir=tmpdir, client_name="Test")
-        df = pd.read_csv(paths["csv_shares"])
+        df = pd.read_csv(paths["csv_contributions"])
         assert "dim" in df.columns
         assert "item" in df.columns
         assert "contrib_share" in df.columns

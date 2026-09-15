@@ -11,15 +11,16 @@ def _make_fixtures():
     idx = pd.date_range("2023-01-02", periods=52, freq="W-MON")
     rng = np.random.default_rng(42)
     spend = pd.DataFrame({
-        "invest:sp":  rng.random(52) * 1000,
-        "invest:rj":  rng.random(52) * 200,
-        "invest:rec": rng.random(52) * 5,   # < 2% → excluded
-        "invest:go":  rng.random(52) * 5,   # < 2% → excluded
+        "$metric:invest$category:praca:sp":  rng.random(52) * 1000,
+        "$metric:invest$category:praca:rj":  rng.random(52) * 200,
+        "$metric:invest$category:praca:rec": rng.random(52) * 5,   # < 2% → excluded
+        "$metric:invest$category:praca:go":  rng.random(52) * 5,   # < 2% → excluded
     }, index=idx)
     cfg = DeepDiveConfig(
         dims=["Praca"],
-        vars_per_dim={"Praca": ["invest:sp", "invest:rj", "invest:rec", "invest:go"]},
+        vars_per_dim={"Praca": list(spend.columns)},
         media_var="eletro_total",
+        share_likelihood_metric="invest",
     )
     eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
     contrib_df = spend.copy()
@@ -45,26 +46,56 @@ def test_tiny_vars_bucketed_into_outros():
     cfg, upgrade = _make_fixtures()
     new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
     praca_vars = new_cfg.vars_per_dim.get("Praca", [])
-    # invest:rec, invest:go < 2% → should NOT be in kept vars
-    assert "invest:rec" not in praca_vars
-    assert "invest:go" not in praca_vars
+    # rec, go < 2% → should NOT be in kept vars
+    assert "$metric:invest$category:praca:rec" not in praca_vars
+    assert "$metric:invest$category:praca:go" not in praca_vars
     # 2+ excluded vars → __outros__ column should be added
     assert any("__outros__" in v for v in praca_vars)
-    assert diag.bucketed.get("Praca") == ["invest:rec", "invest:go"]
+    assert diag.bucketed.get("Praca") == [
+        "$metric:invest$category:praca:rec", "$metric:invest$category:praca:go",
+    ]
+
+
+def test_outros_inherits_lower_funnel_when_bucket_fully_lower():
+    """Both bucketed members (rec, go) are configured lower funnel -> the
+    __outros__ aggregate is unambiguous, inherits lower funnel too."""
+    cfg, upgrade = _make_fixtures()
+    cfg.lower_funnel_vars_per_dim = {
+        "Praca": ["$metric:invest$category:praca:rec", "$metric:invest$category:praca:go"],
+    }
+    new_cfg, _ = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    outros_col = next(v for v in new_cfg.vars_per_dim["Praca"] if v.startswith("__outros__"))
+    assert new_cfg.lower_funnel_vars_per_dim["Praca"] == [outros_col]
+
+
+def test_outros_stays_upper_when_bucket_mixed():
+    """Only one of the two bucketed members (rec) is configured lower funnel
+    -> no unambiguous classification, __outros__ defaults to upper funnel
+    (i.e. does NOT get added to lower_funnel_vars_per_dim)."""
+    cfg, upgrade = _make_fixtures()
+    cfg.lower_funnel_vars_per_dim = {
+        "Praca": ["$metric:invest$category:praca:rec"],
+    }
+    new_cfg, _ = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    outros_col = next(v for v in new_cfg.vars_per_dim["Praca"] if v.startswith("__outros__"))
+    assert outros_col not in new_cfg.lower_funnel_vars_per_dim.get("Praca", [])
+    # rec was bucketed away (no longer a standalone slug) -> stale entry dropped
+    assert new_cfg.lower_funnel_vars_per_dim.get("Praca", []) == []
 
 
 def test_single_excluded_var_not_bucketed():
     idx = pd.date_range("2023-01-02", periods=52, freq="W-MON")
     rng = np.random.default_rng(42)
     spend = pd.DataFrame({
-        "invest:sp":  rng.random(52) * 1000,
-        "invest:rj":  rng.random(52) * 200,
-        "invest:rec": rng.random(52) * 5,   # < 2%, sole exclusion → just skipped
+        "$metric:invest$category:praca:sp":  rng.random(52) * 1000,
+        "$metric:invest$category:praca:rj":  rng.random(52) * 200,
+        "$metric:invest$category:praca:rec": rng.random(52) * 5,   # < 2%, sole exclusion → just skipped
     }, index=idx)
     cfg = DeepDiveConfig(
         dims=["Praca"],
-        vars_per_dim={"Praca": ["invest:sp", "invest:rj", "invest:rec"]},
+        vars_per_dim={"Praca": list(spend.columns)},
         media_var="eletro_total",
+        share_likelihood_metric="invest",
     )
     eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
     contrib_df = spend.copy()
@@ -79,7 +110,7 @@ def test_single_excluded_var_not_bucketed():
     new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
     praca_vars = new_cfg.vars_per_dim.get("Praca", [])
     # a single excluded var isn't a "group" → no __outros__, just dropped
-    assert "invest:rec" not in praca_vars
+    assert "$metric:invest$category:praca:rec" not in praca_vars
     assert not any("__outros__" in v for v in praca_vars)
     assert "Praca" not in diag.bucketed
 

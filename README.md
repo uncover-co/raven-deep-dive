@@ -26,7 +26,7 @@ Para isso, ajusta um modelo Deep Dive Raven por dimensão de quebra, com dois ti
 deepdive/
 ├── src/
 │   ├── config.py                    # DeepDiveConfig + build_config() — parse YAML + UpgradeResult
-│   ├── extraction.py                # load_upgrade_stan/meridian — parquets via MLflow
+│   ├── extraction.py                # load_upgrade_stan/meridian/raven — parquets via MLflow
 │   ├── diagnostics.py               # run_diagnostics() — filtra variáveis, cria __outros__
 │   ├── pipeline.py                  # run_deep_dive() — orquestrador por dimensão
 │   ├── plots.py                     # Plotly dark theme + analyze_deepdive/batch/trees
@@ -76,7 +76,7 @@ MMM Base
 
 Cada dimensão é ajustada **independentemente**, mas todas usam o mesmo `C_t` como âncora. O pipeline opera em três etapas:
 
-1. **Extração** — `load_upgrade_stan` / `load_meridian_upgrade`: carrega `contrib_df` e `spend_df` via parquets MLflow.
+1. **Extração** — `load_upgrade_stan` / `load_meridian_upgrade` / `load_raven_upgrade`: carrega `contrib_df` e `spend_df` via parquets MLflow.
 2. **Diagnóstico** — `run_diagnostics`: filtra sub-canais com <2% de spend, agrupa em `__outros__`, calcula HHI e semanas ativas.
 3. **Deep Dive Raven** — `run_deep_dive`: ajusta modelo Hill por dimensão, ancorado em `C_t`.
 
@@ -224,7 +224,7 @@ Campos de `DeepDiveConfig` configuráveis via YAML:
 
 | Campo | Default | Descrição |
 |---|---|---|
-| `model_type` | `"stan"` | `"stan"` ou `"meridian"` — controla extração e template de slug |
+| `model_type` | `"stan"` | `"stan"`, `"meridian"` ou `"raven"` — controla extração e quais métricas são buscadas; o template de slug é único por veículo, não varia por `model_type` |
 | `model_name` | `""` | Identificador legível do modelo upstream (ex: `"Transacoes CC PF - Nacional"`) |
 | `share_prior_scale` | `0.05` | Escala do CSL (0.005 com dados auxiliares) |
 | `proxy_ct_tolerance` | `0.15` | Tolerância ±% da âncora `C_t` |
@@ -330,7 +330,7 @@ Um único `proxy_scale` é calculado por dimensão a partir da série `C_t` daqu
 # configs/novo_cliente_eletro.yaml
 brand: nome-da-marca
 vehicle: eletromidia
-model_type: stan          # stan ou meridian
+model_type: stan          # stan, meridian ou raven
 model_name: "Nome do Modelo Upstream"  # identificador legível (opcional)
 vehicle_specs_path: ../data/vehicle_specs.yaml
 mlflow_tracking_uri: https://mlflow-dev.cloud.uncover.co
@@ -348,7 +348,7 @@ media_var: $metric:investments$vehicle:eletromidia$category:brand:nome-da-marca
 clients:
   novo_cliente:
     specs_path: novo_cliente_eletro.yaml
-    model_type: stan   # ou meridian
+    model_type: stan   # stan, meridian ou raven
     output_subdir: novo_cliente
 ```
 
@@ -466,6 +466,7 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 5. **`share_prior_scale`** deve ser calibrado por veículo: 0.05 (default sem dados auxiliares) → 0.005 (com dados de medição).
 6. **Alta correlação entre sub-canais** (todos crescem juntos) reduz identificabilidade. O CSL mitiga mas não elimina.
 7. **`proxy_ratio` fora de 0.85–1.15** indica pouco sinal em `C_t` para o nível de detalhe solicitado.
+8. **Classificação funil do `__outros__`** herda `lower_funnel_vars_per_dim` só quando todos os membros agrupados são lower funnel (caso homogêneo). Se o bucket for misto (alguns lower, alguns upper), não há classificação inequívoca — o agregado fica upper funnel (adstocked) por padrão, igual ao comportamento pré-existente do sistema. Limitação conhecida.
 
 ---
 
@@ -474,7 +475,7 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 - `mmmverse` — Raven (PiecewiseLinearTrend, MAPInferenceEngine)
 - `prophetverse` — BaseEffect (ContributionShareLikelihood)
 - `jax / jaxlib` — backend numérico
-- `mlflow` — artefatos e parquets
+- `mlflow` — artefatos e parquets. Acesso ao bucket S3 do artifact store varia por run: alguns usam chaves estáticas (`.env`), outros exigem AWS SSO (`aws sso login --profile <perfil>`) — se `download_artifacts`/`list_artifacts` falhar com erro de credencial/token expirado, checar qual dos dois mecanismos o run em questão usa antes de assumir bug.
 - `plotly` — visualizações (dark theme)
 - `pandas / numpy` — manipulação de dados
 - `pyyaml` — configuração declarativa

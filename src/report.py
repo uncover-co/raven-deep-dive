@@ -210,6 +210,7 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
         "no_spend":  "discarded_sem_spend",
         "low_weeks": "discarded_semanas",
         "low_pct":   "discarded_pct",
+        "other_metric": "other_metric",
     }
 
     def _status(row) -> str:

@@ -8,7 +8,7 @@ vehicle_specs_path: "../data/vehicle_specs.yaml"
 
 model_type: meridian
 
-mlflow_tracking_uri: "https://mlflow-dev.cloud.uncover.co"
+mlflow_tracking_uri: "https://mlflow-datascience.cloud.uncover.co"
 upgrade_run_id: "e3f67713b35e4f0084179503101732d8"   
 
 workspace_dd: "ba---tiktok---deepdive"          
@@ -18,6 +18,11 @@ end_date:   "2025-11-24"
 media_var: "tiktok ads"             
 
 dimensions: null
+
+# Share likelihood deve usar exposição, não investimento (ver README).
+# Sem isso o MAP dava NaN loss aqui (gate por investimento instabilizava
+# a composição de canais) — validado que resolve.
+auxiliary_metric: "w:impressions---tiktok-mmm"
 
 share_prior_scale: 0.05
 proxy_ct_tolerance: 0.15

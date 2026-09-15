@@ -42,7 +42,6 @@ upper/lower_funnel_{max_effect,half_max,slope}_prior_dict:
 import optax
 from numpyro.optim import optax_to_numpyro
 from prophetverse.engine.optimizer import BaseOptimizer
-from prophetverse.effects.hill import HillEffect
 from mmmverse.models.raven import (
     Raven as _BaseRaven,
     DEFAULT_CONTROL_PRIOR_SCALE,
@@ -95,7 +94,15 @@ class CosineScheduleAdamWOptimizer(BaseOptimizer):
 
 
 def _patch_hill_priors(effects, me_dict, hm_dict, sl_dict, prefix):
-    """Patch HillEffect instances in-place with per-variable priors.
+    """Patch Hill-like effect instances in-place with per-variable priors.
+
+    Matches by duck-typing (`hasattr(effect, "half_max_prior")`), not
+    `isinstance` against a specific class: depending on the active
+    `PanelStrategy`, `make_hill()` can return `mmmverse.effects.saturation
+    .HillEffect`, `mmmverse.effects.panel_scaled.PanelScaledHillEffect`, or
+    (via a different, unused code path) `prophetverse.effects.hill
+    .HillEffect` — none of which subclass each other, so a single
+    `isinstance` check silently matches none of them.
 
     Parameters
     ----------
@@ -109,7 +116,7 @@ def _patch_hill_priors(effects, me_dict, hm_dict, sl_dict, prefix):
     if not (me_dict or hm_dict or sl_dict):
         return
     for name, effect, _ in effects:
-        if name.startswith(prefix) and isinstance(effect, HillEffect):
+        if name.startswith(prefix) and hasattr(effect, "half_max_prior"):
             var = name[len(prefix):]
             if var in me_dict:
                 effect.max_effect_prior  = me_dict[var]

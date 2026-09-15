@@ -6,7 +6,7 @@ model_name: "Transacoes CC PF - Nacional"
 vehicle_specs_path: "../data/vehicle_specs.yaml"
 
 # MLflow
-mlflow_tracking_uri: "https://mlflow-dev.cloud.uncover.co"
+mlflow_tracking_uri: "https://mlflow-datascience.cloud.uncover.co"
 upgrade_run_id: "3bca00d1fed14732bfffb65bfd9e12bd"
 
 # Workspace for breakdown spend data (mammoth BuildDefaultDataset)
