@@ -327,11 +327,6 @@ vehicles:
   tiktok:
     vehicle_slug: tiktok
     default_metric: "w:investments---tiktok-mmm"
-    metrics:
-      stan:     "w:investments---tiktok-mmm"
-      meridian:
-        - "w:investments---tiktok-mmm"
-        - "w:impressions---tiktok-mmm"
 
     # Modela só na granularidade máxima; campaign_category e product_level_1
     # são derivados por rollup via hierarquia declarada em product_level_4.
