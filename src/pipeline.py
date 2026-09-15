@@ -103,9 +103,12 @@ def _run_raven_dim(
     variaveis = list(features_df.columns)
     y2 = media_dd_contrib.to_frame(name="channel")
 
+    _lower_vars = [v for v in (lower_funnel_variables or []) if v in variaveis]
+    _upper_vars = [v for v in variaveis if v not in _lower_vars]
+
     features_raw = features_df.reindex(media_dd_contrib.index, fill_value=0)
-    if adstock_decay is not None and adstock_decay > 0:
-        features_raw = _apply_adstock_df(features_raw, adstock_decay)
+    if adstock_decay is not None and adstock_decay > 0 and _upper_vars:
+        features_raw[_upper_vars] = _apply_adstock_df(features_raw[_upper_vars], adstock_decay)
 
     col_maxes = features_raw[variaveis].max(axis=0).replace(0, 1.0)
     features_norm = features_raw[variaveis].div(col_maxes)
@@ -149,9 +152,6 @@ def _run_raven_dim(
     )
 
     _trend = PiecewiseLinearTrend(changepoint_interval=52) if use_piecewise_trend else FlatTrend()
-
-    _lower_vars = [v for v in (lower_funnel_variables or []) if v in variaveis]
-    _upper_vars = [v for v in variaveis if v not in _lower_vars]
 
     raven2 = Raven(
         upper_funnel_variables=_upper_vars,
