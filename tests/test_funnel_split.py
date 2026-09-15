@@ -31,7 +31,7 @@ def _small_spend_df(T=26, K=3, seed=0) -> pd.DataFrame:
 def test_deepdive_config_has_lower_funnel_vars_per_dim():
     sig = inspect.signature(DeepDiveConfig)
     assert "lower_funnel_vars_per_dim" in sig.parameters
-    assert sig.parameters["lower_funnel_vars_per_dim"].default is inspect.Parameter.empty or True
+    assert sig.parameters["lower_funnel_vars_per_dim"].default is not inspect.Parameter.empty
     cfg = DeepDiveConfig(dims=["d"], vars_per_dim={"d": ["v1"]}, media_var="m")
     assert cfg.lower_funnel_vars_per_dim == {}
 
