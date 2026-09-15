@@ -205,5 +205,5 @@ def build_config(
         min_active_weeks=cfg.get("min_active_weeks", 2),
         min_active_weeks_frac=cfg.get("min_active_weeks_frac", 0.05),
         vehicle_spec=vehicle_spec,
-        lower_funnel_vars_per_dim=cfg.get("lower_funnel_vars_per_dim", {}),
+        lower_funnel_vars_per_dim=cfg.get("lower_funnel_vars_per_dim") or {},
     )
