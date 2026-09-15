@@ -40,6 +40,11 @@ def run_diagnostics(
     min_active_weeks_frac = (
         min_active_weeks_frac if min_active_weeks_frac is not None else config.min_active_weeks_frac
     )
+    if not config.share_likelihood_metric:
+        raise ValueError(
+            "config.share_likelihood_metric is not set. build_config() always fills this in; "
+            "if you built DeepDiveConfig by hand, pass share_likelihood_metric explicitly."
+        )
 
     df = upgrade.spend_df.copy()
     rows: list[dict] = []
@@ -47,7 +52,6 @@ def run_diagnostics(
     bucketed: dict[str, list[str]] = {}
     skipped_dims: list[str] = []
     n_weeks = len(df)
-    # Piso relativo — série curta e longa pedem pisos diferentes.
     effective_min_weeks = max(min_active_weeks, round(min_active_weeks_frac * n_weeks))
 
     # share_likelihood_metric é sempre o regressor da curva Hill; nunca muda.
@@ -114,7 +118,7 @@ def run_diagnostics(
 
         if n_active < 2 or hhi > hhi_threshold:
             skipped_dims.append(dim)
-            for slug, d in primary_stats.items():
+            for slug, d in gate_stats.items():
                 rows.append(_make_row(dim, slug, d, cat_total, n_weeks, hhi, rec="SKIP", keep=False, reason=f"dim SKIP ({gate_label})", reason_code="dim_skip"))
             continue
 
@@ -184,6 +188,7 @@ def run_diagnostics(
         min_active_weeks=min_active_weeks,
         min_active_weeks_frac=min_active_weeks_frac,
         vehicle_spec=config.vehicle_spec,
+        lower_funnel_vars_per_dim=config.lower_funnel_vars_per_dim,
     )
     return new_config, DiagnosisResult(
         spend_report=spend_report,

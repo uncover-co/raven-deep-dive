@@ -25,6 +25,9 @@ class DeepDiveConfig:
     share_likelihood_metric: str = ""  # metric slug driving the Hill-curve regressor + diagnostics gate (defaults to investments)
     auxiliary_metric: str = ""    # metric slug used ONLY as CSL prior target + extra diagnostics guardrail (e.g. impressions) — never drives the regressor
     vehicle_spec: dict = field(default_factory=dict)  # full spec from vehicle_specs.yaml
+    # {dim_name: [slug, ...]} fit WITHOUT adstock; rest of the dim keeps adstock.
+    # Vehicle-agnostic: pipeline only sees slugs, no funnel/branding concept baked in.
+    lower_funnel_vars_per_dim: dict[str, list[str]] = field(default_factory=dict)
 
 
 if "!class" not in yaml.SafeLoader.yaml_constructors:
@@ -38,16 +41,15 @@ def _load_yaml(path: str) -> dict:
         return yaml.safe_load(f) or {}
 
 
-def _get_template(vehicle_spec: dict, breakdown_spec: dict, model_type: str = "stan") -> str:
-    """Select the right slug template for a breakdown, mirroring utils._get_template."""
+def _get_template(vehicle_spec: dict, breakdown_spec: dict) -> str:
+    """Select the slug template for a breakdown (one per vehicle, not split by model_type)."""
     category = breakdown_spec["category"]
 
     # 1) Breakdown-level override has highest priority.
-    breakdown_templates = breakdown_spec.get("templates", {})
-    if model_type in breakdown_templates:
-        return breakdown_templates[model_type]
+    if breakdown_spec.get("template"):
+        return breakdown_spec["template"]
 
-    model_spec = vehicle_spec.get("models", {}).get(model_type, {})
+    model_spec = vehicle_spec.get("models", {})
 
     # 2) State-specific template when category == "state".
     if category == "state" and model_spec.get("state_template"):
@@ -57,9 +59,7 @@ def _get_template(vehicle_spec: dict, breakdown_spec: dict, model_type: str = "s
     if model_spec.get("default_template"):
         return model_spec["default_template"]
 
-    raise ValueError(
-        f"No template defined for model_type='{model_type}' and category='{category}'."
-    )
+    raise ValueError(f"No template defined for category='{category}'.")
 
 
 def _resolve_metrics(vehicle_spec: dict, model_type: str) -> list[str]:
@@ -118,7 +118,7 @@ def _build_stan_vars(
             raise ValueError(
                 f"Breakdown '{bd_name}' has no 'values' defined in vehicle_specs."
             )
-        template = _get_template(vehicle_spec, bd, model_type=model_type)
+        template = _get_template(vehicle_spec, bd)
         slugs = []
         for metric in metrics:
             for value in values:
@@ -205,4 +205,5 @@ def build_config(
         min_active_weeks=cfg.get("min_active_weeks", 2),
         min_active_weeks_frac=cfg.get("min_active_weeks_frac", 0.05),
         vehicle_spec=vehicle_spec,
+        lower_funnel_vars_per_dim=cfg.get("lower_funnel_vars_per_dim", {}),
     )
