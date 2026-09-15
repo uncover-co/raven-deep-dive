@@ -115,6 +115,47 @@ def test_single_excluded_var_not_bucketed():
     assert "Praca" not in diag.bucketed
 
 
+def test_slug_without_primary_column_excluded_even_if_aux_available():
+    """Regression: a slug can pass the exposure-based gate (real impressions)
+    while its investment column doesn't exist at all (dropped upstream as
+    all-zero) -- must not end up "kept", or auxiliary_metric_dfs ends up with
+    a column that pipeline.py's real feature set (filtered to what actually
+    exists in spend_df) doesn't have, desyncing metric_df from
+    target_effect_names during CSL fitting."""
+    idx = pd.date_range("2023-01-02", periods=52, freq="W-MON")
+    rng = np.random.default_rng(7)
+    spend = pd.DataFrame({
+        "$metric:invest$category:praca:sp": rng.random(52) * 1000,
+        "$metric:invest$category:praca:rj": rng.random(52) * 1000,
+        "$metric:impr$category:praca:sp":   rng.random(52) * 500,
+        "$metric:impr$category:praca:rj":   rng.random(52) * 500,
+        # "ghost": real impressions but no investment column at all --
+        # mirrors load_breakdown_spend dropping an all-zero primary column.
+        "$metric:impr$category:praca:ghost": rng.random(52) * 500,
+    }, index=idx)
+    cfg = DeepDiveConfig(
+        dims=["Praca"],
+        vars_per_dim={"Praca": [
+            "$metric:invest$category:praca:sp",
+            "$metric:invest$category:praca:rj",
+            "$metric:invest$category:praca:ghost",
+        ]},
+        media_var="eletro_total",
+        share_likelihood_metric="invest",
+        auxiliary_metric="impr",
+    )
+    eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
+    contrib_df = spend.copy()
+    contrib_df["eletro_total"] = eletro
+    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={}, y_hat=eletro)
+
+    new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    ghost_slug = "$metric:invest$category:praca:ghost"
+    assert ghost_slug not in new_cfg.vars_per_dim["Praca"]
+    aux_df = diag.auxiliary_metric_dfs["Praca"]
+    assert ghost_slug not in aux_df.columns
+
+
 def test_spend_report_columns():
     cfg, upgrade = _make_fixtures()
     _, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)

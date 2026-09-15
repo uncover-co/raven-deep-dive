@@ -139,6 +139,11 @@ def run_diagnostics(
                 keep, reason, rc = False, f"pct {pct:.1%} < {min_spend_share:.0%} ({gate_label})", "low_pct"
             elif d["active"] < effective_min_weeks:
                 keep, reason, rc = False, f"só {d['active']} semana(s) < {effective_min_weeks} ({gate_label})", "low_weeks"
+            elif gate_label == "aux" and primary_stats[slug]["total"] == 0:
+                # Passou no gate de exposição, mas não existe investimento pra
+                # essa slug (coluna ausente/all-zero na extração) -- sem isso
+                # não há série pra virar regressor.
+                keep, reason, rc = False, "sem investimento (coluna ausente)", "no_primary_col"
             else:
                 keep, reason, rc = True, "", "kept"
 

@@ -20,8 +20,6 @@ media_var: "tiktok ads"
 dimensions: null
 
 # Share likelihood deve usar exposição, não investimento (ver README).
-# No-op aqui: tiktok.metrics.stan só busca investments, nunca impressions
-# (só o meridian busca as duas) — precisaria ajustar vehicle_specs.yaml antes.
 auxiliary_metric: "w:impressions---tiktok-mmm"
 
 # Sub-canais de resposta imediata (sem adstock), via tiktok.hierarchy.pl4_to_pl1.
