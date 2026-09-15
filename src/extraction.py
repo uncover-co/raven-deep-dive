@@ -163,7 +163,7 @@ def load_raven_upgrade(
         os.makedirs(dst, exist_ok=True)
         export_cached = os.path.join(dst, "export_data.parquet")
         input_cached = os.path.join(dst, "input_data.parquet")
-        if os.path.exists(export_cached):
+        if os.path.exists(export_cached) and os.path.exists(input_cached):
             print(f"[cache] {dst}")
             export_path, input_path = export_cached, input_cached
         else:
