@@ -56,6 +56,33 @@ def test_tiny_vars_bucketed_into_outros():
     ]
 
 
+def test_outros_inherits_lower_funnel_when_bucket_fully_lower():
+    """Both bucketed members (rec, go) are configured lower funnel -> the
+    __outros__ aggregate is unambiguous, inherits lower funnel too."""
+    cfg, upgrade = _make_fixtures()
+    cfg.lower_funnel_vars_per_dim = {
+        "Praca": ["$metric:invest$category:praca:rec", "$metric:invest$category:praca:go"],
+    }
+    new_cfg, _ = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    outros_col = next(v for v in new_cfg.vars_per_dim["Praca"] if v.startswith("__outros__"))
+    assert new_cfg.lower_funnel_vars_per_dim["Praca"] == [outros_col]
+
+
+def test_outros_stays_upper_when_bucket_mixed():
+    """Only one of the two bucketed members (rec) is configured lower funnel
+    -> no unambiguous classification, __outros__ defaults to upper funnel
+    (i.e. does NOT get added to lower_funnel_vars_per_dim)."""
+    cfg, upgrade = _make_fixtures()
+    cfg.lower_funnel_vars_per_dim = {
+        "Praca": ["$metric:invest$category:praca:rec"],
+    }
+    new_cfg, _ = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    outros_col = next(v for v in new_cfg.vars_per_dim["Praca"] if v.startswith("__outros__"))
+    assert outros_col not in new_cfg.lower_funnel_vars_per_dim.get("Praca", [])
+    # rec was bucketed away (no longer a standalone slug) -> stale entry dropped
+    assert new_cfg.lower_funnel_vars_per_dim.get("Praca", []) == []
+
+
 def test_single_excluded_var_not_bucketed():
     idx = pd.date_range("2023-01-02", periods=52, freq="W-MON")
     rng = np.random.default_rng(42)

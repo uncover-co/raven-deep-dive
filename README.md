@@ -224,7 +224,7 @@ Campos de `DeepDiveConfig` configuráveis via YAML:
 
 | Campo | Default | Descrição |
 |---|---|---|
-| `model_type` | `"stan"` | `"stan"`, `"meridian"` ou `"raven"` — controla extração e template de slug |
+| `model_type` | `"stan"` | `"stan"`, `"meridian"` ou `"raven"` — controla extração e quais métricas são buscadas; o template de slug é único por veículo, não varia por `model_type` |
 | `model_name` | `""` | Identificador legível do modelo upstream (ex: `"Transacoes CC PF - Nacional"`) |
 | `share_prior_scale` | `0.05` | Escala do CSL (0.005 com dados auxiliares) |
 | `proxy_ct_tolerance` | `0.15` | Tolerância ±% da âncora `C_t` |
@@ -466,6 +466,7 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 5. **`share_prior_scale`** deve ser calibrado por veículo: 0.05 (default sem dados auxiliares) → 0.005 (com dados de medição).
 6. **Alta correlação entre sub-canais** (todos crescem juntos) reduz identificabilidade. O CSL mitiga mas não elimina.
 7. **`proxy_ratio` fora de 0.85–1.15** indica pouco sinal em `C_t` para o nível de detalhe solicitado.
+8. **Classificação funil do `__outros__`** herda `lower_funnel_vars_per_dim` só quando todos os membros agrupados são lower funnel (caso homogêneo). Se o bucket for misto (alguns lower, alguns upper), não há classificação inequívoca — o agregado fica upper funnel (adstocked) por padrão, igual ao comportamento pré-existente do sistema. Limitação conhecida.
 
 ---
 

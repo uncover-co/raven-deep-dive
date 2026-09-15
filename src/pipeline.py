@@ -256,7 +256,16 @@ def run_deep_dive(
 
         print(f"▶ [{dim}]  ({len(available)} vars)")
         _aux = (auxiliary_metric_dfs or {}).get(dim)
-        _lower_vars = [v for v in config.lower_funnel_vars_per_dim.get(dim, []) if v in available]
+        _configured_lower = config.lower_funnel_vars_per_dim.get(dim, [])
+        _lower_vars = [v for v in _configured_lower if v in available]
+        _dropped_lower = [v for v in _configured_lower if v not in available]
+        if _dropped_lower:
+            print(
+                f"  [WARNING] [{dim}] {len(_dropped_lower)} lower_funnel_vars_per_dim entr"
+                f"{'y' if len(_dropped_lower) == 1 else 'ies'} not in available vars (likely "
+                f"bucketed into __outros__ by diagnostics) — falling back to upper funnel "
+                f"(adstocked) for: {_dropped_lower}"
+            )
         r = _run_raven_dim(
             dim_name=dim,
             features_df=upgrade.spend_df[available].copy(),

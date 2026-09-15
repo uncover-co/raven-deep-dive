@@ -15,7 +15,7 @@ from extraction import UpgradeResult
 @dataclass
 class DiagnosisResult:
     spend_report: pd.DataFrame       # per-var stats: share, HHI, semanas_ativas, keep
-    bucketed: dict[str, list[str]]   # dim → vars bucketed into __outros__
+    bucketed: dict[str, dict[str, list[str]]]  # dim -> {outros_col: [members]}; up to 2 per dim (lower/upper)
     skipped_dims: list[str]          # dims skipped (HHI too high or < 2 active)
     auxiliary_metric_dfs: dict[str, pd.DataFrame] | None = None  # dim → df aligned to final kept cols (config.auxiliary_metric values), feeds ContributionShareLikelihood prior only
 
@@ -51,6 +51,13 @@ def run_diagnostics(
     new_vars_per_dim: dict[str, list[str]] = {}
     bucketed: dict[str, list[str]] = {}
     skipped_dims: list[str] = []
+    # Carried through as-is, except: an __outros__ bucket where every member
+    # was itself configured lower funnel inherits that (a residual made only
+    # of no-adstock variables is still no-adstock). A mixed bucket (some
+    # members lower, some not) has no unambiguous answer -- it keeps the
+    # existing system-wide default (upper/adstocked) rather than guessing;
+    # see README Sec. 11 for why this is a known, accepted limitation.
+    new_lower_funnel_vars_per_dim = {k: list(v) for k, v in config.lower_funnel_vars_per_dim.items()}
     n_weeks = len(df)
     effective_min_weeks = max(min_active_weeks, round(min_active_weeks_frac * n_weeks))
 
@@ -149,6 +156,23 @@ def run_diagnostics(
                 df[outros_col] = df[excl].sum(axis=1)
                 kept.append(outros_col)
                 bucketed[dim] = excl
+
+                configured_lower = set(config.lower_funnel_vars_per_dim.get(dim, []))
+                excl_lower = [v for v in excl if v in configured_lower]
+                # excl members no longer exist as standalone slugs.
+                if dim in new_lower_funnel_vars_per_dim:
+                    new_lower_funnel_vars_per_dim[dim] = [
+                        v for v in new_lower_funnel_vars_per_dim[dim] if v not in excl
+                    ]
+                if excl_lower and len(excl_lower) == len(excl):
+                    new_lower_funnel_vars_per_dim.setdefault(dim, []).append(outros_col)
+                    print(f"  [{dim}] {outros_col}: all {len(excl)} bucketed members are "
+                          f"configured lower funnel -> outros inherits lower funnel too.")
+                elif excl_lower:
+                    print(f"  [WARNING] [{dim}] {outros_col}: {len(excl_lower)}/{len(excl)} "
+                          f"bucketed members are configured lower funnel, mixed with upper-"
+                          f"funnel members -> no unambiguous classification, defaulting the "
+                          f"whole aggregate to upper funnel (adstocked). See README Sec. 11.")
             new_vars_per_dim[dim] = kept
 
             if aux_prefix and aux_available:
@@ -188,7 +212,7 @@ def run_diagnostics(
         min_active_weeks=min_active_weeks,
         min_active_weeks_frac=min_active_weeks_frac,
         vehicle_spec=config.vehicle_spec,
-        lower_funnel_vars_per_dim=config.lower_funnel_vars_per_dim,
+        lower_funnel_vars_per_dim=new_lower_funnel_vars_per_dim,
     )
     return new_config, DiagnosisResult(
         spend_report=spend_report,
