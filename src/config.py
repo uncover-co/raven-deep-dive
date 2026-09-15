@@ -65,8 +65,8 @@ def _get_template(vehicle_spec: dict, breakdown_spec: dict) -> str:
 def _resolve_metrics(vehicle_spec: dict, auxiliary_metric: str) -> list[str]:
     """Metrics fetched for every breakdown slug: the vehicle's primary
     (investment) metric, plus the client's auxiliary exposure metric when
-    set. Every deep dive needs both — regressor + share prior — regardless
-    of which model anchors it (stan/meridian/raven)."""
+    set — independent of which model anchors it (stan/meridian/raven).
+    Falls back to just the primary metric otherwise (build_config warns)."""
     primary = vehicle_spec.get("default_metric", "investments")
     if auxiliary_metric and auxiliary_metric != primary:
         return [primary, auxiliary_metric]
@@ -81,6 +81,12 @@ def resolve_share_likelihood_metric(metrics: list[str], override: str | None) ->
     regardless of vehicle — falling back to the first metric if none matches.
     """
     if override:
+        if override not in metrics:
+            raise ValueError(
+                f"share_likelihood_metric override '{override}' is not one of "
+                f"the fetched metrics {metrics} (vehicle's default_metric + "
+                "client's auxiliary_metric)."
+            )
         return override
     return next((m for m in metrics if "invest" in m.lower()), metrics[0])
 
