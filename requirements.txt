@@ -1,6 +1,6 @@
 # ── Uncover internal packages ────────────────────────────────────────────────
 # Instalar via git (acesso interno necessário):
-git+ssh://git@github.com/uncover-co/mmmverse.git
+git+ssh://git@github.com/uncover-co/mmmverse.git@v1.5.0
 git+ssh://git@github.com/uncover-co/mammoth.git
 git+ssh://git@github.com/uncover-co/pytoolkit-webserver-sdk.git
 git+ssh://git@github.com/uncover-co/uncoverpy-deploy.git

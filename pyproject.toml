@@ -33,7 +33,7 @@ dependencies = [
     "ipykernel>=6.0.0",
     "nbformat>=5.9.0",
     # Uncover internal packages (acesso interno necessário)
-    "mmmverse @ git+ssh://git@github.com/uncover-co/mmmverse.git",
+    "mmmverse @ git+ssh://git@github.com/uncover-co/mmmverse.git@v1.5.0",
     "uncoverwebserversdk @ git+ssh://git@github.com/uncover-co/pytoolkit-webserver-sdk.git",
     "uncover-deploy @ git+ssh://git@github.com/uncover-co/uncoverpy-deploy.git",
     "autommm @ git+ssh://git@github.com/uncover-co/autommm_mle.git",
