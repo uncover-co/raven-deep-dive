@@ -37,6 +37,7 @@ dependencies = [
     "uncoverwebserversdk @ git+ssh://git@github.com/uncover-co/pytoolkit-webserver-sdk.git",
     "uncover-deploy @ git+ssh://git@github.com/uncover-co/uncoverpy-deploy.git",
     "autommm @ git+ssh://git@github.com/uncover-co/autommm_mle.git",
+    "ducks @ git+ssh://git@github.com/uncover-co/ducks.git",
 ]
 
 [project.optional-dependencies]

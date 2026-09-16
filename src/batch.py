@@ -64,6 +64,7 @@ def run_single_client(
     run_id       = specs.get("upgrade_run_id")
     model_type   = specs.get("model_type", client_cfg.get("model_type", "stan"))
     workspace_dd = specs.get("workspace_dd")
+    data_version = specs.get("data_version")
     start_date   = datetime.fromisoformat(specs["start_date"])
     end_date     = datetime.fromisoformat(specs["end_date"])
 
@@ -87,7 +88,9 @@ def run_single_client(
 
         all_vars = [v for slugs in config.vars_per_dim.values() for v in slugs]
         print(f"  Loading breakdown spend ({len(all_vars)} vars)...")
-        upgrade.spend_df = load_breakdown_spend(workspace_dd, all_vars, start_date, end_date)
+        upgrade.spend_df = load_breakdown_spend(
+            workspace_dd, all_vars, start_date, end_date, data_version=data_version
+        )
 
         config, diag = run_diagnostics(config, upgrade)
 

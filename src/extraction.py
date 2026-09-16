@@ -277,34 +277,38 @@ def load_breakdown_spend(
     end_date: datetime,
     time_interval: str = "week",
     timezone: str = "America/Sao_Paulo",
-    output_path: str = "/tmp/dd_spend.parquet",
+    data_version: str | None = None,
 ) -> pd.DataFrame:
     """Load breakdown-level spend data for all Deep Dive variables.
 
-    Wraps preprocessing_dd from the mammoth BuildDefaultDataset pipeline.
-    Returns DataFrame with timestamp index and one column per variable.
-    """
-    from uncover.deploy.pipelines.preprocessing import BuildDefaultDataset
+    Wraps ducks' build_modelling_dataset (the maintained replacement for the
+    legacy mammoth BuildDefaultDataset). Returns DataFrame with timestamp
+    index and one column per variable that has real data -- an all-zero
+    column (no signal at all) is dropped, same as the pre-ducks behavior.
 
-    ds = BuildDefaultDataset(
-        workspace=workspace,
-        filters=all_vars,
-        time_interval=time_interval,
-        timezone=timezone,
+    data_version pins the read to a completed workspace snapshot (see
+    ducks' data-version docs); omit for the latest live data.
+    """
+    import ducks
+
+    ws = ducks.workspace(workspace)
+    df = ws.build_modelling_dataset(
+        all_vars,
         start_date=start_date,
         end_date=end_date,
+        time_interval=time_interval,
+        timezone=timezone,
+        # zero_fill="media" matches metric names by substring
+        # ("$metric:investments"/"$metric:impressions"); our real slugs (e.g.
+        # "$metric:w:investments---tiktok-mmm$...") don't match it, so fill
+        # every column instead -- matches the pre-ducks behavior regardless
+        # of naming.
+        zero_fill=True,
+        data_version=data_version,
     )
-    ds.data = ds.data.fillna(0)
-    ds.zero_fill_investments()
-    zero_cols = [c for c in ds.data.columns if (ds.data[c] == 0).all()]
+    zero_cols = [c for c in df.columns if (df[c] == 0).all()]
     if zero_cols:
         print(f"Dropping {len(zero_cols)} all-zero columns: {zero_cols}")
-        ds.data = ds.data.drop(columns=zero_cols)
-    ds.validate_output_dataset()
-    ds.save_modelling_inputs(output_path=output_path)
-
-    df = pd.read_parquet(output_path).fillna(0)
-    if "timestamp" in df.columns:
-        df = df.set_index(pd.to_datetime(df["timestamp"])).drop(columns=["timestamp"])
-    df.index = pd.to_datetime(df.index).tz_localize(None).normalize()
+        df = df.drop(columns=zero_cols)
+    df.index = df.index.normalize()
     return df

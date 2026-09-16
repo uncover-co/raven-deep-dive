@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+from datetime import datetime
 import pandas as pd
 import pytest
 from unittest.mock import patch, MagicMock
@@ -106,3 +107,35 @@ def test_load_raven_upgrade_with_mocks():
     assert result.y_actual is not None
     assert abs(float(result.y_actual.iloc[0]) - 100.0) < 1e-6
     assert abs(float(result.y_actual.iloc[1]) - 200.0) < 1e-6
+
+
+def test_load_breakdown_spend_drops_all_zero_columns_and_pins_data_version():
+    """zero_fill="media" (ducks) matches metric names by substring
+    ("$metric:investments"/"$metric:impressions"); our actual slugs (e.g.
+    "$metric:w:investments---tiktok-mmm$...") never match that, so we pass
+    zero_fill=True instead -- fills every column regardless of naming,
+    matching the pre-ducks behavior."""
+    from extraction import load_breakdown_spend
+
+    idx = pd.date_range("2024-01-01", periods=3, freq="W-MON")
+    fake_df = pd.DataFrame({
+        "$metric:w:investments---tiktok-mmm$category:a": [10.0, 20.0, 30.0],
+        "$metric:w:investments---tiktok-mmm$category:b": [0.0, 0.0, 0.0],
+    }, index=idx)
+
+    mock_ws = MagicMock()
+    mock_ws.build_modelling_dataset.return_value = fake_df
+
+    with patch("ducks.workspace", return_value=mock_ws) as mock_workspace:
+        result = load_breakdown_spend(
+            "some-workspace",
+            ["$metric:w:investments---tiktok-mmm$category:a", "$metric:w:investments---tiktok-mmm$category:b"],
+            datetime(2024, 1, 1), datetime(2024, 1, 21),
+            data_version="2026-01-01_000000",
+        )
+
+    mock_workspace.assert_called_once_with("some-workspace")
+    kwargs = mock_ws.build_modelling_dataset.call_args.kwargs
+    assert kwargs["zero_fill"] is True
+    assert kwargs["data_version"] == "2026-01-01_000000"
+    assert list(result.columns) == ["$metric:w:investments---tiktok-mmm$category:a"]
