@@ -338,7 +338,7 @@ vehicle_specs_path: ../data/vehicle_specs.yaml
 mlflow_tracking_uri: https://mlflow-dev.cloud.uncover.co
 upgrade_run_id: <run_id_do_mmm>
 workspace_dd: <workspace_mlflow>
-data_version: <nome_do_snapshot>  # opcional -- pina a leitura num data version do ducks; omitir usa o dado atual da plataforma, não a versão salva
+data_version: <nome_do_snapshot>  # opcional -- fixa a leitura num data version do ducks; omitir usa o dado atual da plataforma, não a versão salva
 start_date: 2022-01-03
 end_date: 2025-12-29
 media_var: $metric:investments$vehicle:eletromidia$category:brand:nome-da-marca
