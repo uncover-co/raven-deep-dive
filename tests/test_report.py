@@ -65,9 +65,9 @@ def test_diagnostics_status_maps_no_gate_signal_and_no_primary_col():
 
     diag = DiagnosisResult(
         spend_report=pd.DataFrame([
-            {"dim": "Praca", "slug": "sp", "reason": "sem sinal em impr", "reason_code": "no_gate_signal",
+            {"dim": "Praca", "slug": "sp", "reason": "no signal in impr", "reason_code": "no_gate_signal",
              "active_weeks": 0, "gate_total": 0.0, "pct_gate_dim": 0.0},
-            {"dim": "Praca", "slug": "rj", "reason": "sem investimento (coluna ausente)", "reason_code": "no_primary_col",
+            {"dim": "Praca", "slug": "rj", "reason": "no investment (missing column)", "reason_code": "no_primary_col",
              "active_weeks": 10, "gate_total": 0.0, "pct_gate_dim": 0.0},
         ]),
         bucketed={},
@@ -75,5 +75,5 @@ def test_diagnostics_status_maps_no_gate_signal_and_no_primary_col():
     )
     df = _build_diagnostics_df(_FakeResult(), diag)
     status_by_slug = dict(zip(df["slug"], df["status"]))
-    assert status_by_slug["sp"] == "discarded_sem_sinal"
-    assert status_by_slug["rj"] == "discarded_sem_investimento"
+    assert status_by_slug["sp"] == "discarded_no_signal"
+    assert status_by_slug["rj"] == "discarded_no_investment"
