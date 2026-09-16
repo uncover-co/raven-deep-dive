@@ -156,6 +156,14 @@ def test_slug_without_primary_column_excluded_even_if_aux_available():
     assert ghost_slug not in aux_df.columns
 
 
+def test_warns_when_auxiliary_metric_configured_but_no_real_data_for_dim(capsys):
+    cfg, upgrade = _make_fixtures()
+    cfg.auxiliary_metric = "impr"  # no $metric:impr$... columns exist in spend
+    run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    out = capsys.readouterr().out
+    assert "[WARNING] [Praca] auxiliary_metric 'impr' configurado" in out
+
+
 def test_spend_report_columns():
     cfg, upgrade = _make_fixtures()
     _, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)

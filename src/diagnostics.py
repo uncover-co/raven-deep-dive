@@ -116,6 +116,9 @@ def run_diagnostics(
         primary_stats: dict[str, dict] = _stats_for(metric_prefix, tail_of)
         aux_stats: dict[str, dict] = _stats_for(aux_prefix, tail_of) if aux_prefix else {}
         aux_available = aux_prefix is not None and sum(v["total"] for v in aux_stats.values()) > 0
+        if aux_prefix is not None and not aux_available:
+            print(f"  [WARNING] [{dim}] auxiliary_metric '{aux_metric}' configurado mas sem "
+                  f"dado real nessa dimensão -- caindo no fallback de investimento.")
 
         # gate_stats decide keep/exclude; kept/excl continuam com as slugs de
         # investimento (tail_of), que é o que vira regressor.
