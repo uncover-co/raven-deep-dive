@@ -19,6 +19,7 @@ def run_stability_test(
     upgrade: UpgradeResult,
     seeds: list[int] | None = None,
     instability_threshold: float = 0.05,
+    auxiliary_metric_dfs: dict[str, pd.DataFrame] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[int, DDResult]]:
     """Run MAP stability test across multiple JAX seeds.
 
@@ -43,7 +44,9 @@ def run_stability_test(
             warnings.simplefilter("ignore")
             with contextlib.redirect_stdout(io.StringIO()):
                 with patch("jax.random.PRNGKey", new=lambda s, _s=seed, _o=_orig_prng: _o(_s)):
-                    runs[seed] = run_deep_dive(config, upgrade, verbose=False)
+                    runs[seed] = run_deep_dive(
+                        config, upgrade, auxiliary_metric_dfs=auxiliary_metric_dfs, verbose=False
+                    )
         pr_str = "  ".join(f"{d}={v:.3f}" for d, v in runs[seed].proxy_ratios.items())
         print(f"OK  proxy_ratios: {pr_str}")
 
