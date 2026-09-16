@@ -134,7 +134,8 @@ def test_pipeline_accepts_auxiliary_df():
     assert "auxiliary_metric_dfs" in sig_e1.parameters, (
         "run_deep_dive missing auxiliary_metric_dfs param"
     )
-    assert sig_e1.parameters["auxiliary_metric_dfs"].default is None
+    # Required, not optional -- no silent fallback to raw investment.
+    assert sig_e1.parameters["auxiliary_metric_dfs"].default is inspect.Parameter.empty
 
 
 # ── Test 5: integration — share recovery with auxiliary prior (slow) ──────────

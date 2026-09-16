@@ -17,11 +17,13 @@ from pipeline import DDResult, run_deep_dive
 def run_stability_test(
     config: DeepDiveConfig,
     upgrade: UpgradeResult,
+    auxiliary_metric_dfs: dict[str, pd.DataFrame],
     seeds: list[int] | None = None,
     instability_threshold: float = 0.05,
-    auxiliary_metric_dfs: dict[str, pd.DataFrame] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[int, DDResult]]:
     """Run MAP stability test across multiple JAX seeds.
+
+    auxiliary_metric_dfs: pass diag.auxiliary_metric_dfs from run_diagnostics().
 
     Returns (df_stab, stats_stab, runs).
     df_stab: long-form contrib_share per (seed, dim, item).

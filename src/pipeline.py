@@ -210,11 +210,15 @@ def _run_raven_dim(
 def run_deep_dive(
     config: DeepDiveConfig,
     upgrade: UpgradeResult,
-    auxiliary_metric_dfs: dict[str, pd.DataFrame] | None = None,
+    auxiliary_metric_dfs: dict[str, pd.DataFrame],
     verbose: bool = True,
     upgrade_run_id: str = "",
 ) -> DDResult:
-    """Run deep dive per dimension; collect into DDResult."""
+    """Run deep dive per dimension; collect into DDResult.
+
+    auxiliary_metric_dfs: pass diag.auxiliary_metric_dfs from run_diagnostics().
+    Required, not optional -- every dim needs its share-likelihood proxy.
+    """
     if config.media_var not in upgrade.contrib_df.columns:
         available = list(upgrade.contrib_df.columns)[:10]
         raise KeyError(
@@ -237,7 +241,9 @@ def run_deep_dive(
             continue
 
         print(f"▶ [{dim}]  ({len(available)} vars)")
-        _aux = (auxiliary_metric_dfs or {}).get(dim)
+        if dim not in auxiliary_metric_dfs:
+            raise ValueError(f"[{dim}] auxiliary_metric_dfs has no entry for this dim.")
+        _aux = auxiliary_metric_dfs[dim]
         _configured_lower = config.lower_funnel_vars_per_dim.get(dim, [])
         _lower_vars = [v for v in _configured_lower if v in available]
         _dropped_lower = [v for v in _configured_lower if v not in available]
