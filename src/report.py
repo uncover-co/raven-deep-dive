@@ -73,10 +73,10 @@ def generate_report(
         model = result.models.get(dim)
         if model is None:
             continue
-        variaveis = result.config.vars_per_dim.get(dim, [])
+        variables = result.config.vars_per_dim.get(dim, [])
         df_h = extract_hill_params(
             raven2_model=model,
-            variaveis=variaveis,
+            variables=variables,
             features_raw=result.features_raw.get(dim),
             col_maxes=result.col_maxes.get(dim),
             y_max=y_max,
@@ -105,13 +105,13 @@ def generate_report(
         if c_df is None:
             continue
         html_w = os.path.join(out, f"weekly_{dim}.html")
-        plot_weekly_df(c_df, ct, title=f"Contribs Semanais — {dim}").write_html(html_w)
+        plot_weekly_df(c_df, ct, title=f"Weekly Contributions — {dim}").write_html(html_w)
         paths[f"html_weekly_{dim}"] = html_w
 
         for level, rollup_df in rollup_contribs_map.get(dim, {}).items():
             html_w = os.path.join(out, f"weekly_{dim}_{level}.html")
             plot_weekly_df(
-                rollup_df, ct, title=f"Contribs Semanais — {dim} → {level}"
+                rollup_df, ct, title=f"Weekly Contributions — {dim} → {level}"
             ).write_html(html_w)
             paths[f"html_weekly_{dim}_{level}"] = html_w
 
@@ -207,18 +207,18 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
 
     _RC_TO_STATUS = {
         "dim_skip": "dim_skip",
-        "no_gate_signal": "discarded_sem_sinal",
-        "low_weeks": "discarded_semanas",
+        "no_gate_signal": "discarded_no_signal",
+        "low_weeks": "discarded_low_weeks",
         "low_pct":   "discarded_pct",
-        "no_primary_col": "discarded_sem_investimento",
+        "no_primary_col": "discarded_no_investment",
     }
 
     def _status(row) -> str:
         rc = row.get("reason_code", "")
         if rc in _RC_TO_STATUS:
             return _RC_TO_STATUS[rc]
-        if str(row["slug"]).startswith("__outros__"):
-            return "outros_aggregate"
+        if str(row["slug"]).startswith("__others__"):
+            return "others_aggregate"
         return "kept"
 
     rows = []
@@ -229,7 +229,7 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
             "slug": r["slug"],
             "status": _status(r),
             "reason": r["reason"],
-            "semanas_ativas": r["semanas_ativas"],
+            "active_weeks": r["active_weeks"],
             "gate_total": r["gate_total"],
             "pct_gate_dim": r["pct_gate_dim"],
             "contrib_total": ct,
@@ -237,18 +237,18 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
         })
 
     for dim, bucketed_slugs in diag.bucketed.items():
-        outros_col = f"__outros__{sanitize_dim_name(dim)}"
-        ct, pct_c = contrib_lookup.get((dim, outros_col), (None, None))
+        others_col = f"__others__{sanitize_dim_name(dim)}"
+        ct, pct_c = contrib_lookup.get((dim, others_col), (None, None))
         base = diag.spend_report[
             (diag.spend_report["dim"] == dim) &
             (diag.spend_report["slug"].isin(bucketed_slugs))
         ]
         rows.append({
             "dim": dim,
-            "slug": outros_col,
-            "status": "outros_aggregate",
-            "reason": f"agrupa {len(bucketed_slugs)} quebra(s)",
-            "semanas_ativas": int(base["semanas_ativas"].max()) if len(base) else None,
+            "slug": others_col,
+            "status": "others_aggregate",
+            "reason": f"aggregates {len(bucketed_slugs)} breakdown(s)",
+            "active_weeks": int(base["active_weeks"].max()) if len(base) else None,
             "gate_total": float(base["gate_total"].sum()) if len(base) else None,
             "pct_gate_dim": float(base["pct_gate_dim"].sum()) if len(base) else None,
             "contrib_total": ct,

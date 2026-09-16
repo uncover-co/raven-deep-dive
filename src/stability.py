@@ -77,13 +77,13 @@ def run_stability_test(
     )
     unstable = stats_stab[stats_stab["std"] > instability_threshold]
 
-    print(f"\nConcluído: {n} runs.")
-    print("\nEstabilidade por dimensão:")
+    print(f"\nCompleted: {n} runs.")
+    print("\nStability by dimension:")
     print(summary.to_string(index=False, float_format="{:.4f}".format))
     if len(unstable):
-        print(f"\n⚠  Sub-canais instáveis (std > {instability_threshold}):")
+        print(f"\n⚠  Unstable sub-channels (std > {instability_threshold}):")
         print(unstable[["dim", "item", "mean", "std"]].to_string(index=False, float_format="{:.4f}".format))
     else:
-        print(f"\n[ok] Nenhum sub-canal instável (std > {instability_threshold}) — MAP estável.")
+        print(f"\n[ok] No unstable sub-channels (std > {instability_threshold}) — MAP stable.")
 
     return df_stab, stats_stab, runs

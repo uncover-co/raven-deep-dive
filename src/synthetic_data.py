@@ -12,13 +12,13 @@ import pandas as pd
 @dataclass
 class SyntheticDimension:
     dim_name: str
-    variaveis: list[str]
+    variables: list[str]
     spend_df: pd.DataFrame          # raw spend (T x K), original index
-    hill_params: pd.DataFrame       # known θ_k: columns me/hm/sl, index=variaveis
+    hill_params: pd.DataFrame       # known θ_k: columns me/hm/sl, index=variables
     contributions: pd.DataFrame     # synthetic c_kt (T x K), same index as spend_df
     media_dd_contrib: pd.Series       # synthetic C_t (T,), same index as spend_df
-    true_shares: pd.Series          # σ_k^true (K,), index=variaveis, sums to 1
-    col_maxes: pd.Series            # max spend per channel (K,), index=variaveis
+    true_shares: pd.Series          # σ_k^true (K,), index=variables, sums to 1
+    col_maxes: pd.Series            # max spend per channel (K,), index=variables
 
 
 def hill(x: np.ndarray, max_effect: float, half_max: float, slope: float) -> np.ndarray:
@@ -46,8 +46,8 @@ def generate_synthetic_dim(
     noise_sigma: std of multiplicative noise on C_t (0.02 = 2%)
     """
     rng = np.random.default_rng(rng_seed)
-    variaveis = list(spend_df.columns)
-    K = len(variaveis)
+    variables = list(spend_df.columns)
+    K = len(variables)
 
     # col_maxes: replace 0 with 1 to avoid division by zero
     col_maxes = spend_df.max(axis=0).replace(0, 1.0)
@@ -58,7 +58,7 @@ def generate_synthetic_dim(
     # Build hill_params DataFrame, sampling if not provided
     if hill_params is None:
         records = {}
-        for v in variaveis:
+        for v in variables:
             records[v] = {
                 "me": float(rng.uniform(0.05 / K, 0.35 / K)),
                 "hm": float(rng.uniform(0.20, 0.65)),
@@ -66,14 +66,14 @@ def generate_synthetic_dim(
             }
         hill_params_dict = records
     else:
-        hill_params_dict = {v: dict(hill_params[v]) for v in variaveis}
+        hill_params_dict = {v: dict(hill_params[v]) for v in variables}
 
     params_df = pd.DataFrame(hill_params_dict).T[["me", "hm", "sl"]]
     params_df.index.name = None
 
     # c_kt = hill(x_kt, me_k, hm_k, sl_k) applied column-by-column
     contribs_data = {}
-    for v in variaveis:
+    for v in variables:
         me = params_df.loc[v, "me"]
         hm = params_df.loc[v, "hm"]
         sl = params_df.loc[v, "sl"]
@@ -93,11 +93,11 @@ def generate_synthetic_dim(
     if grand_total > 0:
         true_shares = total_per_channel / grand_total
     else:
-        true_shares = pd.Series(1.0 / K, index=variaveis)
+        true_shares = pd.Series(1.0 / K, index=variables)
 
     return SyntheticDimension(
         dim_name=dim_name,
-        variaveis=variaveis,
+        variables=variables,
         spend_df=spend_df.copy(),
         hill_params=params_df,
         contributions=contributions,
@@ -126,8 +126,8 @@ def simulate_measurement_prior(
            If None, uses RangeIndex — caller is responsible for alignment.
     """
     rng = np.random.default_rng(rng_seed)
-    variaveis = list(true_shares.index)
-    K = len(variaveis)
+    variables = list(true_shares.index)
+    K = len(variables)
 
     # log-probability space: softmax(log(p)) = p, so sigma=0 recovers true_shares exactly.
     # Binary logit log(p/(1-p)) is NOT the inverse of softmax for K>2 — use log(p) instead.
@@ -144,4 +144,4 @@ def simulate_measurement_prior(
 
     # Return (n_obs, K) DataFrame with constant columns
     data = np.tile(s_hat, (n_obs, 1))
-    return pd.DataFrame(data, columns=variaveis, index=index)
+    return pd.DataFrame(data, columns=variables, index=index)

@@ -66,9 +66,9 @@ def test_diagnostics_status_maps_no_gate_signal_and_no_primary_col():
     diag = DiagnosisResult(
         spend_report=pd.DataFrame([
             {"dim": "Praca", "slug": "sp", "reason": "sem sinal em impr", "reason_code": "no_gate_signal",
-             "semanas_ativas": 0, "gate_total": 0.0, "pct_gate_dim": 0.0},
+             "active_weeks": 0, "gate_total": 0.0, "pct_gate_dim": 0.0},
             {"dim": "Praca", "slug": "rj", "reason": "sem investimento (coluna ausente)", "reason_code": "no_primary_col",
-             "semanas_ativas": 10, "gate_total": 0.0, "pct_gate_dim": 0.0},
+             "active_weeks": 10, "gate_total": 0.0, "pct_gate_dim": 0.0},
         ]),
         bucketed={},
         skipped_dims=[],

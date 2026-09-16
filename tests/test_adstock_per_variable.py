@@ -38,7 +38,7 @@ def test_run_raven_dim_accepts_upper_funnel_adstock_effect():
 
 def test_raises_clearly_when_adstock_dict_has_stale_keys():
     """A dict configured against slugs that no longer exist as standalone
-    upper-funnel variables (e.g. diagnostics bucketed them into __outros__
+    upper-funnel variables (e.g. diagnostics bucketed them into __others__
     after this was set) must fail with a message naming what's missing/
     stale and what the correct current list is -- not Raven's raw,
     Pydantic-flavored validation error."""
@@ -49,7 +49,7 @@ def test_raises_clearly_when_adstock_dict_has_stale_keys():
     rng = np.random.default_rng(0)
     features_df = pd.DataFrame({
         "v1": rng.uniform(100, 1000, 26),
-        "__outros__testdim": rng.uniform(100, 1000, 26),  # v2/v3 already bucketed
+        "__others__testdim": rng.uniform(100, 1000, 26),  # v2/v3 already bucketed
     }, index=idx)
     media_dd_contrib = features_df.sum(axis=1) * 0.3
 

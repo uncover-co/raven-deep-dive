@@ -85,11 +85,11 @@ def _run_raven_dim(
               f"{media_dd_contrib.index[-1].date()} "
               f"({len(media_dd_contrib)}w, {n_dropped} dropped, {_nz} internal zeros)")
 
-    variaveis = list(features_df.columns)
+    variables = list(features_df.columns)
     y2 = media_dd_contrib.to_frame(name="channel")
 
-    _lower_vars = [v for v in (lower_funnel_variables or []) if v in variaveis]
-    _upper_vars = [v for v in variaveis if v not in _lower_vars]
+    _lower_vars = [v for v in (lower_funnel_variables or []) if v in variables]
+    _upper_vars = [v for v in variables if v not in _lower_vars]
 
     if isinstance(upper_funnel_adstock_effect, dict):
         configured = set(upper_funnel_adstock_effect)
@@ -98,7 +98,7 @@ def _run_raven_dim(
             raise ValueError(
                 f"[{dim_name}] upper_funnel_adstock_effect_per_dim doesn't match "
                 f"this dimension's current upper-funnel variables (diagnostics can "
-                f"drop low-spend slugs or bucket them into an __outros__ column "
+                f"drop low-spend slugs or bucket them into an __others__ column "
                 f"after this was configured -- check diag.bucketed). "
                 f"Missing key(s): {sorted(missing)}. Stale key(s): {sorted(extra)}. "
                 f"Current upper-funnel variables: {sorted(_upper_vars)}."
@@ -106,8 +106,8 @@ def _run_raven_dim(
 
     features_raw = features_df.reindex(media_dd_contrib.index, fill_value=0)
 
-    col_maxes = features_raw[variaveis].max(axis=0).replace(0, 1.0)
-    features_norm = features_raw[variaveis].div(col_maxes)
+    col_maxes = features_raw[variables].max(axis=0).replace(0, 1.0)
+    features_norm = features_raw[variables].div(col_maxes)
 
     _y2_max = float(y2.values.max())
     _proxy_col = f"anchor_{dim_name.replace(' ', '_')}"
@@ -136,12 +136,12 @@ def _run_raven_dim(
 
     _csl = ContributionShareLikelihood(
         target_effect_names=[
-            f"latent/contribution/media/{quote(v, safe='')}" for v in variaveis
+            f"latent/contribution/media/{quote(v, safe='')}" for v in variables
         ],
         metric_df=(
             auxiliary_metric_df.reindex(y2.index).fillna(0)
             if auxiliary_metric_df is not None
-            else features_raw[variaveis]
+            else features_raw[variables]
         ),
         scale=share_prior_scale,
         name=dim_name.replace(" ", "_"),
@@ -153,7 +153,7 @@ def _run_raven_dim(
         upper_funnel_variables=_upper_vars,
         lower_funnel_variables=_lower_vars,
         upper_funnel_adstock_effect=upper_funnel_adstock_effect,
-        proxy_variable_mapping={_proxy_col: variaveis},
+        proxy_variable_mapping={_proxy_col: variables},
         proxy_type={_proxy_col: "exact"},
         proxy_likelihood_scale=_proxy_scale,
         expected_roi=None,
@@ -181,13 +181,13 @@ def _run_raven_dim(
     _comps = raven2.predict_components(fh=y2.index, X=X2)
 
     contribs = pd.DataFrame(
-        {v: _comps[f"latent/contribution/media/{v}"] for v in variaveis},
+        {v: _comps[f"latent/contribution/media/{v}"] for v in variables},
         index=y2.index,
     )
 
     _proxy_ratio = contribs.sum(axis=1).sum() / (_ct.sum() + 1e-12)
     _sh_mod = contribs.sum() / (contribs.sum().sum() + 1e-12)
-    _sh_spend = features_raw[variaveis].sum() / (features_raw[variaveis].sum().sum() + 1e-12)
+    _sh_spend = features_raw[variables].sum() / (features_raw[variables].sum().sum() + 1e-12)
     _csl_max_dev = (_sh_mod - _sh_spend).abs().max()
 
     _ct_hat = contribs.sum(axis=1)
@@ -216,7 +216,7 @@ def _run_raven_dim(
         "shares_spend": _sh_spend,
         "y2": y2,
         "X2": X2,
-        "variaveis": variaveis,
+        "variables": variables,
         "features_raw": features_raw,
         "col_maxes": col_maxes,
     }
@@ -266,7 +266,7 @@ def run_deep_dive(
             print(
                 f"  [WARNING] [{dim}] {len(_dropped_lower)} lower_funnel_vars_per_dim entr"
                 f"{'y' if len(_dropped_lower) == 1 else 'ies'} not in available vars (likely "
-                f"bucketed into __outros__ by diagnostics) — falling back to upper funnel "
+                f"bucketed into __others__ by diagnostics) — falling back to upper funnel "
                 f"(adstocked) for: {_dropped_lower}"
             )
         r = _run_raven_dim(
@@ -312,18 +312,18 @@ def run_deep_dive(
 
 def extract_hill_params(
     raven2_model,
-    variaveis: list[str],
+    variables: list[str],
     features_raw: pd.DataFrame | None = None,
     col_maxes: pd.Series | None = None,
     y_max: float | None = None,
 ) -> pd.DataFrame:
     """Extract MAP Hill parameters per variable.
-    half_max_abs = half_max_norm * col_maxes[v]  → BRL/semana.
+    half_max_abs = half_max_norm * col_maxes[v]  → BRL/week.
     """
     import jax.numpy as jnp
     posterior = raven2_model.model_.inference_engine_.posterior_samples_
     records = []
-    for var in variaveis:
+    for var in variables:
         _q = quote(var, safe="")
         _keys = {k for k in posterior if _q in k}
 
