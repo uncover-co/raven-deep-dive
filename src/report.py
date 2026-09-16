@@ -207,10 +207,10 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
 
     _RC_TO_STATUS = {
         "dim_skip": "dim_skip",
-        "no_spend":  "discarded_sem_spend",
+        "no_gate_signal": "discarded_sem_sinal",
         "low_weeks": "discarded_semanas",
         "low_pct":   "discarded_pct",
-        "other_metric": "other_metric",
+        "no_primary_col": "discarded_sem_investimento",
     }
 
     def _status(row) -> str:
@@ -230,8 +230,8 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
             "status": _status(r),
             "reason": r["reason"],
             "semanas_ativas": r["semanas_ativas"],
-            "spend_total": r["spend_total"],
-            "pct_spend_dim": r["pct_dim"],
+            "gate_total": r["gate_total"],
+            "pct_gate_dim": r["pct_gate_dim"],
             "contrib_total": ct,
             "pct_contrib_dim": pct_c,
         })
@@ -249,8 +249,8 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
             "status": "outros_aggregate",
             "reason": f"agrupa {len(bucketed_slugs)} quebra(s)",
             "semanas_ativas": int(base["semanas_ativas"].max()) if len(base) else None,
-            "spend_total": float(base["spend_total"].sum()) if len(base) else None,
-            "pct_spend_dim": float(base["pct_dim"].sum()) if len(base) else None,
+            "gate_total": float(base["gate_total"].sum()) if len(base) else None,
+            "pct_gate_dim": float(base["pct_gate_dim"].sum()) if len(base) else None,
             "contrib_total": ct,
             "pct_contrib_dim": pct_c,
         })

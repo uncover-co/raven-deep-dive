@@ -77,7 +77,7 @@ MMM Base
 Cada dimensão é ajustada **independentemente**, mas todas usam o mesmo `C_t` como âncora. O pipeline opera em três etapas:
 
 1. **Extração** — `load_upgrade_stan` / `load_meridian_upgrade` / `load_raven_upgrade`: carrega `contrib_df` e `spend_df` via parquets MLflow.
-2. **Diagnóstico** — `run_diagnostics`: filtra sub-canais com <2% de spend, agrupa em `__outros__`, calcula HHI e semanas ativas.
+2. **Diagnóstico** — `run_diagnostics`: filtra sub-canais com <2% na métrica de gate (`auxiliary_metric` — exposição real quando disponível, senão o próprio investimento), agrupa em `__outros__`, calcula HHI e semanas ativas.
 3. **Deep Dive Raven** — `run_deep_dive`: ajusta modelo Hill por dimensão, ancorado em `C_t`.
 
 ---
@@ -227,7 +227,7 @@ Campos de `DeepDiveConfig` configuráveis via YAML:
 | `model_type` | `"stan"` | `"stan"`, `"meridian"` ou `"raven"` — controla só de onde vem a extração do modelo âncora; template de slug é único por veículo, e métricas buscadas são `default_metric` do veículo + `auxiliary_metric` do cliente, nenhum dos dois varia por `model_type` |
 | `model_name` | `""` | Identificador legível do modelo upstream (ex: `"Transacoes CC PF - Nacional"`) |
 | `share_likelihood_metric` | `""` | Override do metric slug que vira regressor da curva Hill (default: o que tem "invest" no nome) |
-| `auxiliary_metric` | `""` | Metric slug de exposição (ex: impressions) usado como prior do CSL + guardrail do diagnóstico. Vazio → aviso no log, cai no fallback de investimento |
+| `auxiliary_metric` | *obrigatório* | Metric slug que decide o gate do diagnóstico + prior do CSL. Use a métrica de exposição real (ex: impressions) quando o veículo tiver; sem isso, aponte pro mesmo valor de `share_likelihood_metric` (investimento como proxy). `build_config()` levanta erro se não for setado; `run_diagnostics()` levanta erro se a dimensão não tiver dado real nele |
 | `share_prior_scale` | `0.05` | Escala do CSL (0.005 com dados auxiliares) |
 | `proxy_ct_tolerance` | `0.15` | Tolerância ±% da âncora `C_t` |
 | `num_steps` | `30_000` | Steps de otimização MAP por dimensão |
@@ -239,7 +239,7 @@ Campos de `DeepDiveConfig` configuráveis via YAML:
 
 ```python
 run_diagnostics(config, upgrade)
-  → DiagnosisResult.spend_report   # HHI, % spend, semanas ativas por variável
+  → DiagnosisResult.spend_report   # HHI, % na métrica de gate (auxiliary_metric), semanas ativas por variável
   → DiagnosisResult.bucketed        # {dim: {var → "__outros__"}}
   → DiagnosisResult.skipped_dims    # dims sem variáveis após filtro
 ```
@@ -342,6 +342,7 @@ data_version: <nome_do_snapshot>  # opcional -- fixa a leitura num data version 
 start_date: 2022-01-03
 end_date: 2025-12-29
 media_var: $metric:investments$vehicle:eletromidia$category:brand:nome-da-marca
+auxiliary_metric: investments  # obrigatório -- métrica de exposição real (ex: impressions) quando o veículo tiver; senão, o mesmo valor do investimento
 ```
 
 **Registrar no registry:**
@@ -360,12 +361,18 @@ clients:
 ### 8.2 Single-Client
 
 ```python
+# run_id, mlflow_uri, workspace_dd, start_date, end_date, output_dir: do client YAML.
 upgrade        = load_upgrade_stan(run_id, tracking_uri=mlflow_uri)
 config         = build_config(upgrade, specs_path="configs/bradesco_eletro.yaml")
+
+# upgrade.spend_df vem vazio -- popula com o breakdown real antes do diagnóstico.
+all_vars       = [v for slugs in config.vars_per_dim.values() for v in slugs]
+upgrade.spend_df = load_breakdown_spend(workspace_dd, all_vars, start_date, end_date)
+
 config, diag   = run_diagnostics(config, upgrade)
-result         = run_deep_dive(config, upgrade)
+result         = run_deep_dive(config, upgrade, auxiliary_metric_dfs=diag.auxiliary_metric_dfs)
 _              = analyze_deepdive(result)
-               generate_report(result, diag=diag, output_dir=output_dir, client_name="bradesco")
+generate_report(result, diag=diag, output_dir=output_dir, client_name="bradesco")
 # outputs em: outputs/bradesco_eletromidia/
 ```
 
@@ -463,10 +470,10 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 ## 11. Premissas e Limitações
 
 1. **`C_t` como âncora.** A distribuição entre sub-canais herda tanto os acertos quanto as imprecisões do modelo upstream.
-2. **Spend disponível por sub-canal.** Slug ausente no `spend_df` → spend zero → descartado silenciosamente (sem erro, sem entrar em `__outros__`). Sub-canal com spend > 0 mas < 2% vai pra `__outros__`. Dimensão inteira pulada se `n_active < 2` ou HHI > threshold.
+2. **Investimento disponível por sub-canal.** Slug ausente no `spend_df` → sem série de investimento → descartado silenciosamente (sem erro, sem entrar em `__outros__`), mesmo que passe no gate de exposição. Sub-canal com < 2% na métrica de gate vai pra `__outros__`. Dimensão inteira pulada se `n_active < 2` ou HHI > threshold (calculados na métrica de gate).
 3. **Frequência semanal (W-MON).** Séries diárias são agregadas; mensais não são suportadas.
-4. **Sub-canais com <2% de spend** são agrupados em `__outros__`. Aumentar `min_share` em `run_diagnostics()` se necessário.
-5. **`share_prior_scale`** deve ser calibrado por veículo: 0.05 (default sem dados auxiliares) → 0.005 (com dados de medição).
+4. **Sub-canais com <2% na métrica de gate** (`auxiliary_metric`) são agrupados em `__outros__`. Aumentar `min_share` em `run_diagnostics()` se necessário.
+5. **`share_prior_scale`** deve ser calibrado por veículo: 0.05 quando `auxiliary_metric` aponta pro próprio investimento (sem exposição real) → 0.005 com exposição real (ex: impressions).
 6. **Alta correlação entre sub-canais** (todos crescem juntos) reduz identificabilidade. O CSL mitiga mas não elimina.
 7. **`proxy_ratio` fora de 0.85–1.15** indica pouco sinal em `C_t` para o nível de detalhe solicitado.
 8. **Classificação funil do `__outros__`** herda `lower_funnel_vars_per_dim` só quando todos os membros agrupados são lower funnel (caso homogêneo). Se o bucket for misto (alguns lower, alguns upper), não há classificação inequívoca — o agregado fica upper funnel (adstocked) por padrão, igual ao comportamento pré-existente do sistema. Limitação conhecida.

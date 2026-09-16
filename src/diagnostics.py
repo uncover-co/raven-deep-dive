@@ -45,6 +45,12 @@ def run_diagnostics(
             "config.share_likelihood_metric is not set. build_config() always fills this in; "
             "if you built DeepDiveConfig by hand, pass share_likelihood_metric explicitly."
         )
+    if not config.auxiliary_metric:
+        raise ValueError(
+            "config.auxiliary_metric is not set. build_config() requires it; if you built "
+            "DeepDiveConfig by hand, pass auxiliary_metric explicitly (the same value as "
+            "share_likelihood_metric when the vehicle has no real exposure metric)."
+        )
 
     df = upgrade.spend_df.copy()
     rows: list[dict] = []
@@ -63,20 +69,21 @@ def run_diagnostics(
 
     # share_likelihood_metric é sempre o regressor da curva Hill; nunca muda.
     share_metric = config.share_likelihood_metric
-    metric_prefix = f"$metric:{share_metric}$" if share_metric else None
+    metric_prefix = f"$metric:{share_metric}$"
 
-    # auxiliary_metric nunca vira regressor — só SUBSTITUI investimento como
-    # base do gate (concentração/semanas ativas) quando disponível pro dim,
-    # e alimenta o prior do CSL. Sem dado auxiliar, cai pra investimento.
+    # auxiliary_metric nunca vira regressor -- só decide o gate (concentração/
+    # semanas ativas) e alimenta o prior do CSL. Sempre configurado (ver
+    # build_config); quando o veículo não tem métrica de exposição real, o
+    # próprio DS aponta auxiliary_metric pro mesmo valor de share_likelihood_metric.
     aux_metric = config.auxiliary_metric
-    aux_prefix = f"$metric:{aux_metric}$" if aux_metric else None
+    aux_prefix = f"$metric:{aux_metric}$"
     aux_dfs: dict[str, pd.DataFrame] = {}
 
-    def _stats_for(prefix: str | None, tail_of: dict[str, str]) -> dict[str, dict]:
+    def _stats_for(prefix: str, tail_of: dict[str, str]) -> dict[str, dict]:
         out = {}
         for key, tail in tail_of.items():
-            slug = (prefix or "") + tail
-            if prefix and slug in df.columns:
+            slug = prefix + tail
+            if slug in df.columns:
                 s = df[slug]
                 out[key] = {"total": float(s.sum()), "active": int((s > 0).sum())}
             else:
@@ -90,23 +97,7 @@ def run_diagnostics(
         return total, hhi, n_active
 
     for dim, all_slugs in config.vars_per_dim.items():
-        if metric_prefix:
-            slugs = [s for s in all_slugs if s.startswith(metric_prefix)]
-            other_slugs = [s for s in all_slugs if not s.startswith(metric_prefix)]
-        else:
-            slugs, other_slugs = all_slugs, []
-
-        if not aux_prefix:
-            for slug in other_slugs:
-                if slug in df.columns:
-                    s = df[slug]
-                    d = {"total": float(s.sum()), "active": int((s > 0).sum())}
-                else:
-                    d = {"total": 0.0, "active": 0}
-                rows.append(_make_row(
-                    dim, slug, d, 0.0, n_weeks, float("nan"), rec="INFO", keep=False,
-                    reason="outra métrica (não é share_likelihood_metric)", reason_code="other_metric",
-                ))
+        slugs = [s for s in all_slugs if s.startswith(metric_prefix)]
 
         if not slugs:
             skipped_dims.append(dim)
@@ -114,19 +105,24 @@ def run_diagnostics(
 
         tail_of = {slug: slug[len(metric_prefix):] for slug in slugs}
         primary_stats: dict[str, dict] = _stats_for(metric_prefix, tail_of)
-        aux_stats: dict[str, dict] = _stats_for(aux_prefix, tail_of) if aux_prefix else {}
-        aux_available = aux_prefix is not None and sum(v["total"] for v in aux_stats.values()) > 0
+        aux_stats: dict[str, dict] = _stats_for(aux_prefix, tail_of)
+        if sum(v["total"] for v in aux_stats.values()) == 0:
+            raise ValueError(
+                f"[{dim}] auxiliary_metric '{aux_metric}' has no real data for this "
+                "dimension -- can't drive the share-likelihood gate. Fix the exposure "
+                "data upstream, or set auxiliary_metric to the same value as "
+                "share_likelihood_metric if this vehicle truly has no exposure metric."
+            )
 
         # gate_stats decide keep/exclude; kept/excl continuam com as slugs de
         # investimento (tail_of), que é o que vira regressor.
-        gate_stats = aux_stats if aux_available else primary_stats
-        gate_label = "aux" if aux_available else "invest"
+        gate_stats = aux_stats
         cat_total, hhi, n_active = _hhi_of(gate_stats)
 
         if n_active < 2 or hhi > hhi_threshold:
             skipped_dims.append(dim)
             for slug, d in gate_stats.items():
-                rows.append(_make_row(dim, slug, d, cat_total, n_weeks, hhi, rec="SKIP", keep=False, reason=f"dim SKIP ({gate_label})", reason_code="dim_skip"))
+                rows.append(_make_row(dim, slug, d, cat_total, n_weeks, hhi, rec="SKIP", keep=False, reason=f"dim SKIP ({aux_metric})", reason_code="dim_skip"))
             continue
 
         kept, excl = [], []
@@ -134,12 +130,12 @@ def run_diagnostics(
             d = gate_stats[slug]
             pct = d["total"] / cat_total if cat_total > 0 else 0.0
             if d["total"] == 0:
-                keep, reason, rc = False, f"sem spend ({gate_label})", "no_spend"
+                keep, reason, rc = False, f"sem sinal em {aux_metric}", "no_gate_signal"
             elif pct < min_spend_share:
-                keep, reason, rc = False, f"pct {pct:.1%} < {min_spend_share:.0%} ({gate_label})", "low_pct"
+                keep, reason, rc = False, f"pct {pct:.1%} < {min_spend_share:.0%} ({aux_metric})", "low_pct"
             elif d["active"] < effective_min_weeks:
-                keep, reason, rc = False, f"só {d['active']} semana(s) < {effective_min_weeks} ({gate_label})", "low_weeks"
-            elif gate_label == "aux" and primary_stats[slug]["total"] == 0:
+                keep, reason, rc = False, f"só {d['active']} semana(s) < {effective_min_weeks} ({aux_metric})", "low_weeks"
+            elif primary_stats[slug]["total"] == 0:
                 # Passou no gate de exposição, mas não existe investimento pra
                 # essa slug (coluna ausente/all-zero na extração) -- sem isso
                 # não há série pra virar regressor.
@@ -180,18 +176,17 @@ def run_diagnostics(
                           f"whole aggregate to upper funnel (adstocked). See README Sec. 11.")
             new_vars_per_dim[dim] = kept
 
-            if aux_prefix and aux_available:
-                aux_cols = {}
-                for slug in new_vars_per_dim[dim]:
-                    if slug.startswith("__outros__"):
-                        members = bucketed.get(dim, [])
-                        aux_slugs = [aux_prefix + m[len(metric_prefix):] for m in members]
-                        present = [a for a in aux_slugs if a in df.columns]
-                        aux_cols[slug] = df[present].sum(axis=1) if present else pd.Series(0.0, index=df.index)
-                    else:
-                        aux_slug = aux_prefix + slug[len(metric_prefix):]
-                        aux_cols[slug] = df[aux_slug] if aux_slug in df.columns else pd.Series(0.0, index=df.index)
-                aux_dfs[dim] = pd.DataFrame(aux_cols, index=df.index)
+            aux_cols = {}
+            for slug in new_vars_per_dim[dim]:
+                if slug.startswith("__outros__"):
+                    members = bucketed.get(dim, [])
+                    aux_slugs = [aux_prefix + m[len(metric_prefix):] for m in members]
+                    present = [a for a in aux_slugs if a in df.columns]
+                    aux_cols[slug] = df[present].sum(axis=1) if present else pd.Series(0.0, index=df.index)
+                else:
+                    aux_slug = aux_prefix + slug[len(metric_prefix):]
+                    aux_cols[slug] = df[aux_slug] if aux_slug in df.columns else pd.Series(0.0, index=df.index)
+            aux_dfs[dim] = pd.DataFrame(aux_cols, index=df.index)
 
     # Update spend_df in-place so downstream pipeline sees __outros__ cols
     upgrade.spend_df = df
@@ -257,10 +252,10 @@ def _print_diagnosis(diag_df: pd.DataFrame, min_pct: float, hhi_threshold: float
             print(f"  {flag}{dim:<26}  {rec:>5}  {hhi:>5.2f}  {n_tot:>6}  {n_kp:>6}  {n_ex:>6}")
             for _, row in main[~main["keep"]].iterrows():
                 label = _slug_label(row["slug"])
-                print(f"       ↳ {label:<24}  {row['pct_dim']:>6.1%}  {row['reason']}")
+                print(f"       ↳ {label:<24}  {row['pct_gate_dim']:>6.1%}  {row['reason']}")
             outros_rows = main[main["slug"].str.startswith("__outros__") & main["keep"]]
             for _, row in outros_rows.iterrows():
-                print(f"       → {'outros':<24}  {row['pct_dim']:>6.1%}  {row['reason']}")
+                print(f"       → {'outros':<24}  {row['pct_gate_dim']:>6.1%}  {row['reason']}")
         for _, row in info.iterrows():
             label = _slug_label(row["slug"])
             print(f"       ·  {label:<24}  {row['reason']}")
@@ -280,8 +275,8 @@ def _make_row(dim, slug, d, cat_total, n_weeks, hhi, rec, keep, reason, reason_c
     return {
         "dim": dim,
         "slug": slug,
-        "spend_total": d["total"],
-        "pct_dim": pct,
+        "gate_total": d["total"],
+        "pct_gate_dim": pct,
         "semanas_ativas": d["active"],
         "pct_ativo": d["active"] / n_weeks if n_weeks > 0 else 0.0,
         "hhi": round(hhi, 3),

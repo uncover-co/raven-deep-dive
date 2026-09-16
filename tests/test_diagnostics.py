@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import pytest
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
 from config import DeepDiveConfig
@@ -21,6 +22,7 @@ def _make_fixtures():
         vars_per_dim={"Praca": list(spend.columns)},
         media_var="eletro_total",
         share_likelihood_metric="invest",
+        auxiliary_metric="invest",
     )
     eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
     contrib_df = spend.copy()
@@ -96,6 +98,7 @@ def test_single_excluded_var_not_bucketed():
         vars_per_dim={"Praca": list(spend.columns)},
         media_var="eletro_total",
         share_likelihood_metric="invest",
+        auxiliary_metric="invest",
     )
     eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
     contrib_df = spend.copy()
@@ -156,8 +159,22 @@ def test_slug_without_primary_column_excluded_even_if_aux_available():
     assert ghost_slug not in aux_df.columns
 
 
+def test_raises_when_auxiliary_metric_has_no_real_data_for_dim():
+    cfg, upgrade = _make_fixtures()
+    cfg.auxiliary_metric = "impr"  # no $metric:impr$... columns exist in spend
+    with pytest.raises(ValueError, match="auxiliary_metric 'impr' has no real data"):
+        run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+
+
+def test_raises_when_auxiliary_metric_not_set_on_config():
+    cfg, upgrade = _make_fixtures()
+    cfg.auxiliary_metric = ""
+    with pytest.raises(ValueError, match="config.auxiliary_metric is not set"):
+        run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+
+
 def test_spend_report_columns():
     cfg, upgrade = _make_fixtures()
     _, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
-    expected_cols = {"dim", "slug", "spend_total", "pct_dim", "semanas_ativas", "hhi", "keep"}
+    expected_cols = {"dim", "slug", "gate_total", "pct_gate_dim", "semanas_ativas", "hhi", "keep"}
     assert expected_cols.issubset(set(diag.spend_report.columns))

@@ -64,9 +64,11 @@ def _get_template(vehicle_spec: dict, breakdown_spec: dict) -> str:
 
 def _resolve_metrics(vehicle_spec: dict, auxiliary_metric: str) -> list[str]:
     """Metrics fetched for every breakdown slug: the vehicle's primary
-    (investment) metric, plus the client's auxiliary exposure metric when
-    set — independent of which model anchors it (stan/meridian/raven).
-    Falls back to just the primary metric otherwise (build_config warns)."""
+    (investment) metric, plus the client's auxiliary_metric -- independent
+    of which model anchors it (stan/meridian/raven). auxiliary_metric is
+    mandatory (build_config raises if unset); fetches only the primary
+    metric when it's set to the same value as the primary (no real
+    exposure metric, investment used as its own proxy)."""
     primary = vehicle_spec.get("default_metric", "investments")
     if auxiliary_metric and auxiliary_metric != primary:
         return [primary, auxiliary_metric]
@@ -179,9 +181,11 @@ def build_config(
     model_type = cfg.get("model_type", "stan")
     auxiliary_metric = cfg.get("auxiliary_metric", "")
     if not auxiliary_metric:
-        print(
-            f"  [WARNING] '{specs_path}': auxiliary_metric não definido — "
-            "share likelihood cai no fallback de investimento (ver README)."
+        raise ValueError(
+            f"'auxiliary_metric' not set in {specs_path}. Every Deep Dive needs an "
+            "explicit metric to drive the share-likelihood proxy — set it to a real "
+            "exposure metric (e.g. impressions) when available, or to the same value "
+            "as the investment metric when the vehicle has no exposure metric."
         )
 
     vars_per_dim = _build_vars_per_dim(vehicle_spec, cfg, dims_override)
