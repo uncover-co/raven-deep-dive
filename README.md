@@ -234,6 +234,8 @@ Campos de `DeepDiveConfig` configuráveis via YAML:
 | `min_spend_share` | `0.02` | Sub-canais abaixo vão pra `__outros__` |
 | `hhi_threshold` | `0.85` | HHI máximo — dimensão pulada se mais concentrada |
 | `min_active_weeks` | `2` | Semanas ativas mínimas por sub-canal |
+| `lower_funnel_vars_per_dim` | `{}` | `{dim: [slug, ...]}` — sub-canais fit SEM adstock (resposta imediata) naquele dim; o resto do dim usa adstock (default: Weibull, ~3 meses, decay aprendido). Decida depois do diagnóstico, olhando `diag.bucketed[dim]` pra saber o que entrou no `__outros__` |
+| `upper_funnel_adstock_effect_per_dim` | `{}` | `{dim: effect}` ou `{dim: {slug: effect}}` — customiza o adstock (shape/memória) do grupo upper daquele dim, um efeito só ou por variável. No modo por-variável, precisa cobrir **todas** as variáveis upper do dim (Raven valida e levanta erro se faltar alguma). Ver §8.4 |
 
 ### Diagnósticos Pré-Fit
 
@@ -400,6 +402,26 @@ result = run_deep_dive(config, upgrade,
 # ajustar: config.share_prior_scale = 0.005
 ```
 
+### 8.5 Adstock Customizado por Variável
+
+Por padrão todo sub-canal upper funnel usa o mesmo adstock (Weibull, ~3 meses de memória, decay aprendido pelo MAP). Pra customizar, declare no client YAML usando `!instance`/`!params` (o loader — `mmmverse.spec.yaml.from_yaml`, mesmo mecanismo dos `model_specs` de produção — resolve isso em objetos Python de verdade ao carregar):
+
+```yaml
+# configs/{client}.yaml
+upper_funnel_adstock_effect_per_dim:
+  product_level_4:
+    app-retargeting:
+      '!instance': prophetverse.effects.adstock.WeibullAdstockEffect
+      '!params':
+        max_lag: 2          # memória curta -- resposta quase imediata
+    tv-brand:
+      '!instance': prophetverse.effects.adstock.WeibullAdstockEffect
+      '!params':
+        max_lag: 20         # memória longa -- efeito de marca
+```
+
+No modo por-variável (dict), **todas** as variáveis upper funnel daquele dim precisam de uma entrada — falta uma, o Raven levanta erro na construção (não silencioso). Alternativa: um único `!instance`/`!params` (sem aninhar por slug) aplica o mesmo efeito customizado a todo o grupo upper do dim, sem precisar listar cada variável.
+
 ---
 
 ## 9. Outputs e Interpretação
@@ -477,6 +499,7 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 6. **Alta correlação entre sub-canais** (todos crescem juntos) reduz identificabilidade. O CSL mitiga mas não elimina.
 7. **`proxy_ratio` fora de 0.85–1.15** indica pouco sinal em `C_t` para o nível de detalhe solicitado.
 8. **Classificação funil do `__outros__`** herda `lower_funnel_vars_per_dim` só quando todos os membros agrupados são lower funnel (caso homogêneo). Se o bucket for misto (alguns lower, alguns upper), não há classificação inequívoca — o agregado fica upper funnel (adstocked) por padrão, igual ao comportamento pré-existente do sistema. Limitação conhecida.
+9. **Adstock per-variável é tudo ou nada por dimensão.** `upper_funnel_adstock_effect_per_dim[dim]` no modo dict exige uma entrada pra cada variável upper funnel daquele dim — sem meio-termo (algumas customizadas, outras no default automático). Cobrir todas com o mesmo efeito, ou usar um único `!instance`/`!params` (sem dict) pra aplicar a todo o grupo, quando não precisar de granularidade por variável.
 
 ---
 
