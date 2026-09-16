@@ -406,21 +406,20 @@ result = run_deep_dive(config, upgrade,
 
 Por padrão todo sub-canal upper funnel usa o mesmo adstock (Weibull, ~3 meses de memória, decay aprendido pelo MAP). Pra customizar, declare no client YAML usando `!instance`/`!params` (o loader — `mmmverse.spec.yaml.from_yaml`, mesmo mecanismo dos `model_specs` de produção — resolve isso em objetos Python de verdade ao carregar):
 
+**As chaves no modo por-variável são os slugs completos** exatamente como aparecem em `config.vars_per_dim[dim]` depois do diagnóstico (inclusive `__outros__<dim>`, se houver) — não são labels curtos. O `Raven(...)` valida isso contra `upper_funnel_variables` real e recusa (sem fallback) se faltar ou sobrar chave. Rode `run_diagnostics` primeiro e inspecione `new_config.vars_per_dim[dim]` pra saber a lista exata antes de escrever o YAML.
+
 ```yaml
 # configs/{client}.yaml
 upper_funnel_adstock_effect_per_dim:
   product_level_4:
-    app-retargeting:
+    "$metric:w:investments---tiktok-mmm$category:brand:bradesco$category:product-level-1:tiktok$category:product-level-4:app-retargeting":
       '!instance': prophetverse.effects.adstock.WeibullAdstockEffect
       '!params':
         max_lag: 2          # memória curta -- resposta quase imediata
-    tv-brand:
-      '!instance': prophetverse.effects.adstock.WeibullAdstockEffect
-      '!params':
-        max_lag: 20         # memória longa -- efeito de marca
+    # ... uma entrada por cada slug restante em product_level_4, incluindo __outros__product_level_4 se existir
 ```
 
-No modo por-variável (dict), **todas** as variáveis upper funnel daquele dim precisam de uma entrada — falta uma, o Raven levanta erro na construção (não silencioso). Alternativa: um único `!instance`/`!params` (sem aninhar por slug) aplica o mesmo efeito customizado a todo o grupo upper do dim, sem precisar listar cada variável.
+No modo por-variável (dict), **todas** as variáveis upper funnel daquele dim precisam de uma entrada — falta uma, o Raven levanta erro na construção (não silencioso). Alternativa: um único `!instance`/`!params` (sem aninhar por slug) aplica o mesmo efeito customizado a todo o grupo upper do dim, sem precisar listar cada variável — mais prático quando não precisa de granularidade por variável.
 
 ---
 
