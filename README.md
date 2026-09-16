@@ -77,7 +77,7 @@ MMM Base
 Cada dimensão é ajustada **independentemente**, mas todas usam o mesmo `C_t` como âncora. O pipeline opera em três etapas:
 
 1. **Extração** — `load_upgrade_stan` / `load_meridian_upgrade` / `load_raven_upgrade`: carrega `contrib_df` e `spend_df` via parquets MLflow.
-2. **Diagnóstico** — `run_diagnostics`: filtra sub-canais com <2% de spend, agrupa em `__outros__`, calcula HHI e semanas ativas.
+2. **Diagnóstico** — `run_diagnostics`: filtra sub-canais com <2% na métrica de gate (`auxiliary_metric` — exposição real quando disponível, senão o próprio investimento), agrupa em `__outros__`, calcula HHI e semanas ativas.
 3. **Deep Dive Raven** — `run_deep_dive`: ajusta modelo Hill por dimensão, ancorado em `C_t`.
 
 ---
@@ -239,7 +239,7 @@ Campos de `DeepDiveConfig` configuráveis via YAML:
 
 ```python
 run_diagnostics(config, upgrade)
-  → DiagnosisResult.spend_report   # HHI, % spend, semanas ativas por variável
+  → DiagnosisResult.spend_report   # HHI, % na métrica de gate (auxiliary_metric), semanas ativas por variável
   → DiagnosisResult.bucketed        # {dim: {var → "__outros__"}}
   → DiagnosisResult.skipped_dims    # dims sem variáveis após filtro
 ```
@@ -463,10 +463,10 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 ## 11. Premissas e Limitações
 
 1. **`C_t` como âncora.** A distribuição entre sub-canais herda tanto os acertos quanto as imprecisões do modelo upstream.
-2. **Spend disponível por sub-canal.** Slug ausente no `spend_df` → spend zero → descartado silenciosamente (sem erro, sem entrar em `__outros__`). Sub-canal com spend > 0 mas < 2% vai pra `__outros__`. Dimensão inteira pulada se `n_active < 2` ou HHI > threshold.
+2. **Investimento disponível por sub-canal.** Slug ausente no `spend_df` → sem série de investimento → descartado silenciosamente (sem erro, sem entrar em `__outros__`), mesmo que passe no gate de exposição. Sub-canal com < 2% na métrica de gate vai pra `__outros__`. Dimensão inteira pulada se `n_active < 2` ou HHI > threshold (calculados na métrica de gate).
 3. **Frequência semanal (W-MON).** Séries diárias são agregadas; mensais não são suportadas.
-4. **Sub-canais com <2% de spend** são agrupados em `__outros__`. Aumentar `min_share` em `run_diagnostics()` se necessário.
-5. **`share_prior_scale`** deve ser calibrado por veículo: 0.05 (default sem dados auxiliares) → 0.005 (com dados de medição).
+4. **Sub-canais com <2% na métrica de gate** (`auxiliary_metric`) são agrupados em `__outros__`. Aumentar `min_share` em `run_diagnostics()` se necessário.
+5. **`share_prior_scale`** deve ser calibrado por veículo: 0.05 quando `auxiliary_metric` aponta pro próprio investimento (sem exposição real) → 0.005 com exposição real (ex: impressions).
 6. **Alta correlação entre sub-canais** (todos crescem juntos) reduz identificabilidade. O CSL mitiga mas não elimina.
 7. **`proxy_ratio` fora de 0.85–1.15** indica pouco sinal em `C_t` para o nível de detalhe solicitado.
 8. **Classificação funil do `__outros__`** herda `lower_funnel_vars_per_dim` só quando todos os membros agrupados são lower funnel (caso homogêneo). Se o bucket for misto (alguns lower, alguns upper), não há classificação inequívoca — o agregado fica upper funnel (adstocked) por padrão, igual ao comportamento pré-existente do sistema. Limitação conhecida.

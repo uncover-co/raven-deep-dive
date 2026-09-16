@@ -64,9 +64,11 @@ def _get_template(vehicle_spec: dict, breakdown_spec: dict) -> str:
 
 def _resolve_metrics(vehicle_spec: dict, auxiliary_metric: str) -> list[str]:
     """Metrics fetched for every breakdown slug: the vehicle's primary
-    (investment) metric, plus the client's auxiliary exposure metric when
-    set — independent of which model anchors it (stan/meridian/raven).
-    Falls back to just the primary metric otherwise (build_config warns)."""
+    (investment) metric, plus the client's auxiliary_metric -- independent
+    of which model anchors it (stan/meridian/raven). auxiliary_metric is
+    mandatory (build_config raises if unset); fetches only the primary
+    metric when it's set to the same value as the primary (no real
+    exposure metric, investment used as its own proxy)."""
     primary = vehicle_spec.get("default_metric", "investments")
     if auxiliary_metric and auxiliary_metric != primary:
         return [primary, auxiliary_metric]

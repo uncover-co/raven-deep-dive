@@ -130,7 +130,7 @@ def run_diagnostics(
             d = gate_stats[slug]
             pct = d["total"] / cat_total if cat_total > 0 else 0.0
             if d["total"] == 0:
-                keep, reason, rc = False, f"sem spend ({aux_metric})", "no_spend"
+                keep, reason, rc = False, f"sem sinal em {aux_metric}", "no_gate_signal"
             elif pct < min_spend_share:
                 keep, reason, rc = False, f"pct {pct:.1%} < {min_spend_share:.0%} ({aux_metric})", "low_pct"
             elif d["active"] < effective_min_weeks:

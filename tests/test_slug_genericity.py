@@ -70,6 +70,22 @@ def test_basic_single_metric_single_template(tmp_path):
     ]
 
 
+def test_build_config_raises_when_auxiliary_metric_missing(tmp_path):
+    vehicle_spec = {
+        "vehicle_slug": "fake",
+        "default_metric": "spend",
+        "models": {"default_template": "$metric:{metric}$category:{category}:{value}"},
+        "breakdowns": {"Region": {"category": "region", "values": ["north"]}},
+    }
+    specs_path = _write_specs(tmp_path, "fake_no_aux", vehicle_spec)
+    client_path = _write_client(
+        tmp_path, vehicle="fake_no_aux", vehicle_specs_path=os.path.basename(specs_path),
+        model_type="stan", media_var="total", auxiliary_metric=None,
+    )
+    with pytest.raises(ValueError, match="auxiliary_metric"):
+        build_config(_FakeUpgrade(), client_path)
+
+
 # ── Case B: default_metric + client's auxiliary_metric cross product ────────
 
 def test_default_metric_plus_auxiliary_metric_cross_product(tmp_path):

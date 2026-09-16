@@ -51,3 +51,29 @@ def test_shares_csv_has_expected_columns():
         assert "item" in df.columns
         assert "contrib_share" in df.columns
         assert "spend_share" in df.columns
+
+
+def test_diagnostics_status_maps_no_gate_signal_and_no_primary_col():
+    """Regression: reason_code values produced by diagnostics.py must have a
+    status mapping here, or an excluded row (keep=False) silently reads as
+    "kept" in the report (the fallback for any unmapped code)."""
+    from report import _build_diagnostics_df
+    from diagnostics import DiagnosisResult
+
+    class _FakeResult:
+        contribs = {"Praca": pd.DataFrame({"sp": [1.0]})}
+
+    diag = DiagnosisResult(
+        spend_report=pd.DataFrame([
+            {"dim": "Praca", "slug": "sp", "reason": "sem sinal em impr", "reason_code": "no_gate_signal",
+             "semanas_ativas": 0, "spend_total": 0.0, "pct_dim": 0.0},
+            {"dim": "Praca", "slug": "rj", "reason": "sem investimento (coluna ausente)", "reason_code": "no_primary_col",
+             "semanas_ativas": 10, "spend_total": 0.0, "pct_dim": 0.0},
+        ]),
+        bucketed={},
+        skipped_dims=[],
+    )
+    df = _build_diagnostics_df(_FakeResult(), diag)
+    status_by_slug = dict(zip(df["slug"], df["status"]))
+    assert status_by_slug["sp"] == "discarded_sem_sinal"
+    assert status_by_slug["rj"] == "discarded_sem_investimento"

@@ -207,10 +207,10 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
 
     _RC_TO_STATUS = {
         "dim_skip": "dim_skip",
-        "no_spend":  "discarded_sem_spend",
+        "no_gate_signal": "discarded_sem_sinal",
         "low_weeks": "discarded_semanas",
         "low_pct":   "discarded_pct",
-        "other_metric": "other_metric",
+        "no_primary_col": "discarded_sem_investimento",
     }
 
     def _status(row) -> str:
