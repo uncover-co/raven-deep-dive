@@ -36,6 +36,37 @@ def test_run_raven_dim_accepts_upper_funnel_adstock_effect():
     assert sig.parameters["upper_funnel_adstock_effect"].default is None
 
 
+def test_raises_clearly_when_adstock_dict_has_stale_keys():
+    """A dict configured against slugs that no longer exist as standalone
+    upper-funnel variables (e.g. diagnostics bucketed them into __outros__
+    after this was set) must fail with a message naming what's missing/
+    stale and what the correct current list is -- not Raven's raw,
+    Pydantic-flavored validation error."""
+    from prophetverse.effects import WeibullAdstockEffect
+    from pipeline import _run_raven_dim
+
+    idx = pd.date_range("2023-01-02", periods=26, freq="W-MON")
+    rng = np.random.default_rng(0)
+    features_df = pd.DataFrame({
+        "v1": rng.uniform(100, 1000, 26),
+        "__outros__testdim": rng.uniform(100, 1000, 26),  # v2/v3 already bucketed
+    }, index=idx)
+    media_dd_contrib = features_df.sum(axis=1) * 0.3
+
+    with pytest.raises(ValueError, match=r"Missing key\(s\).*Stale key\(s\).*v2.*v3"):
+        _run_raven_dim(
+            dim_name="TestDim",
+            features_df=features_df,
+            media_dd_contrib=media_dd_contrib,
+            num_steps=1,
+            upper_funnel_adstock_effect={
+                "v1": WeibullAdstockEffect(max_lag=2),
+                "v2": WeibullAdstockEffect(max_lag=2),
+                "v3": WeibullAdstockEffect(max_lag=2),
+            },
+        )
+
+
 def test_run_diagnostics_preserves_upper_funnel_adstock_effect_per_dim():
     from diagnostics import run_diagnostics
     from extraction import UpgradeResult

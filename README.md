@@ -235,7 +235,7 @@ Campos de `DeepDiveConfig` configuráveis via YAML:
 | `hhi_threshold` | `0.85` | HHI máximo — dimensão pulada se mais concentrada |
 | `min_active_weeks` | `2` | Semanas ativas mínimas por sub-canal |
 | `lower_funnel_vars_per_dim` | `{}` | `{dim: [slug, ...]}` — sub-canais fit SEM adstock (resposta imediata) naquele dim; o resto do dim usa adstock (default: Weibull, ~3 meses, decay aprendido). Decida depois do diagnóstico, olhando `diag.bucketed[dim]` pra saber o que entrou no `__outros__` |
-| `upper_funnel_adstock_effect_per_dim` | `{}` | `{dim: effect}` ou `{dim: {slug: effect}}` — customiza o adstock (shape/memória) do grupo upper daquele dim, um efeito só ou por variável. No modo por-variável, precisa cobrir **todas** as variáveis upper do dim (Raven valida e levanta erro se faltar alguma). Ver §8.4 |
+| `upper_funnel_adstock_effect_per_dim` | `{}` | `{dim: effect}` ou `{dim: {slug: effect}}` — customiza o adstock (shape/memória) do grupo upper daquele dim, um efeito só ou por variável. No modo por-variável, precisa cobrir **todas** as variáveis upper do dim (Raven valida e levanta erro se faltar alguma). Ver §8.5 |
 
 ### Diagnósticos Pré-Fit
 

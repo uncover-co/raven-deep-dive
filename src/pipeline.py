@@ -91,6 +91,19 @@ def _run_raven_dim(
     _lower_vars = [v for v in (lower_funnel_variables or []) if v in variaveis]
     _upper_vars = [v for v in variaveis if v not in _lower_vars]
 
+    if isinstance(upper_funnel_adstock_effect, dict):
+        configured = set(upper_funnel_adstock_effect)
+        missing, extra = set(_upper_vars) - configured, configured - set(_upper_vars)
+        if missing or extra:
+            raise ValueError(
+                f"[{dim_name}] upper_funnel_adstock_effect_per_dim doesn't match "
+                f"this dimension's current upper-funnel variables (diagnostics can "
+                f"drop low-spend slugs or bucket them into an __outros__ column "
+                f"after this was configured -- check diag.bucketed). "
+                f"Missing key(s): {sorted(missing)}. Stale key(s): {sorted(extra)}. "
+                f"Current upper-funnel variables: {sorted(_upper_vars)}."
+            )
+
     features_raw = features_df.reindex(media_dd_contrib.index, fill_value=0)
 
     col_maxes = features_raw[variaveis].max(axis=0).replace(0, 1.0)
