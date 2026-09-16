@@ -18,6 +18,10 @@ media_var: 'Eletromidia'
 
 dimensions: null
 
+# eletromidia não tem métrica de exposição própria (confirmado: sem impressions/
+# reach no workspace) -- aponta pro mesmo investimento como proxy de share.
+auxiliary_metric: "investments"
+
 share_prior_scale: 0.05
 proxy_ct_tolerance: 0.15
 num_steps: 30000

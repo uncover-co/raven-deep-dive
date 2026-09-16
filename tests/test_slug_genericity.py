@@ -41,6 +41,7 @@ def _write_specs(tmp_path, vehicle_key: str, vehicle_spec: dict) -> str:
 
 
 def _write_client(tmp_path, filename="client.yaml", **fields) -> str:
+    fields.setdefault("auxiliary_metric", "spend")  # required by build_config()
     path = tmp_path / filename
     path.write_text(yaml.dump(fields))
     return str(path)

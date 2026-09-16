@@ -179,9 +179,11 @@ def build_config(
     model_type = cfg.get("model_type", "stan")
     auxiliary_metric = cfg.get("auxiliary_metric", "")
     if not auxiliary_metric:
-        print(
-            f"  [WARNING] '{specs_path}': auxiliary_metric não definido — "
-            "share likelihood cai no fallback de investimento (ver README)."
+        raise ValueError(
+            f"'auxiliary_metric' not set in {specs_path}. Every Deep Dive needs an "
+            "explicit metric to drive the share-likelihood proxy — set it to a real "
+            "exposure metric (e.g. impressions) when available, or to the same value "
+            "as the investment metric when the vehicle has no exposure metric."
         )
 
     vars_per_dim = _build_vars_per_dim(vehicle_spec, cfg, dims_override)

@@ -227,7 +227,7 @@ Campos de `DeepDiveConfig` configuráveis via YAML:
 | `model_type` | `"stan"` | `"stan"`, `"meridian"` ou `"raven"` — controla só de onde vem a extração do modelo âncora; template de slug é único por veículo, e métricas buscadas são `default_metric` do veículo + `auxiliary_metric` do cliente, nenhum dos dois varia por `model_type` |
 | `model_name` | `""` | Identificador legível do modelo upstream (ex: `"Transacoes CC PF - Nacional"`) |
 | `share_likelihood_metric` | `""` | Override do metric slug que vira regressor da curva Hill (default: o que tem "invest" no nome) |
-| `auxiliary_metric` | `""` | Metric slug de exposição (ex: impressions) usado como prior do CSL + guardrail do diagnóstico. Vazio → aviso no log, cai no fallback de investimento |
+| `auxiliary_metric` | *obrigatório* | Metric slug que decide o gate do diagnóstico + prior do CSL. Use a métrica de exposição real (ex: impressions) quando o veículo tiver; sem isso, aponte pro mesmo valor de `share_likelihood_metric` (investimento como proxy). `build_config()` levanta erro se não for setado; `run_diagnostics()` levanta erro se a dimensão não tiver dado real nele |
 | `share_prior_scale` | `0.05` | Escala do CSL (0.005 com dados auxiliares) |
 | `proxy_ct_tolerance` | `0.15` | Tolerância ±% da âncora `C_t` |
 | `num_steps` | `30_000` | Steps de otimização MAP por dimensão |
@@ -341,6 +341,7 @@ workspace_dd: <workspace_mlflow>
 start_date: 2022-01-03
 end_date: 2025-12-29
 media_var: $metric:investments$vehicle:eletromidia$category:brand:nome-da-marca
+auxiliary_metric: investments  # obrigatório -- métrica de exposição real (ex: impressions) quando o veículo tiver; senão, o mesmo valor do investimento
 ```
 
 **Registrar no registry:**

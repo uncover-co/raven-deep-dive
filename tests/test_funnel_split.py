@@ -64,6 +64,7 @@ def test_run_diagnostics_preserves_lower_funnel_vars_per_dim():
         vars_per_dim={"dim1": [slug_a, slug_b]},
         media_var="total",
         share_likelihood_metric="m",
+        auxiliary_metric="m",
         lower_funnel_vars_per_dim={"dim1": [slug_b]},
     )
     contrib_df = spend.copy()
@@ -97,6 +98,7 @@ def test_build_config_reads_lower_funnel_vars_per_dim(tmp_path):
         "vehicle_specs_path: \"vehicle_specs.yaml\"\n"
         "model_type: stan\n"
         "media_var: \"total\"\n"
+        "auxiliary_metric: \"investments\"\n"
         "lower_funnel_vars_per_dim:\n"
         "  dim1: [\"$metric:investments$category:cat1:a\"]\n"
     )
