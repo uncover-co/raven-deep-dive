@@ -110,12 +110,18 @@ def test_load_raven_upgrade_with_mocks():
 
 
 def test_load_breakdown_spend_drops_all_zero_columns_and_pins_data_version():
+    """Also covers a real gap in ducks' zero_fill="media": it matches metric
+    names by substring ("$metric:investments"/"$metric:impressions"), but our
+    actual slugs (e.g. "$metric:w:investments---tiktok-mmm$...") never match
+    that, so we don't rely on it -- fillna(0) is applied unconditionally
+    here, matching the pre-ducks behavior regardless of naming."""
     from extraction import load_breakdown_spend
+    import numpy as np
 
     idx = pd.date_range("2024-01-01", periods=3, freq="W-MON")
     fake_df = pd.DataFrame({
-        "$metric:investments$category:a": [10.0, 20.0, 30.0],
-        "$metric:investments$category:b": [0.0, 0.0, 0.0],
+        "$metric:w:investments---tiktok-mmm$category:a": [10.0, np.nan, 30.0],
+        "$metric:w:investments---tiktok-mmm$category:b": [0.0, 0.0, 0.0],
     }, index=idx)
 
     mock_ws = MagicMock()
@@ -124,13 +130,14 @@ def test_load_breakdown_spend_drops_all_zero_columns_and_pins_data_version():
     with patch("ducks.workspace", return_value=mock_ws) as mock_workspace:
         result = load_breakdown_spend(
             "some-workspace",
-            ["$metric:investments$category:a", "$metric:investments$category:b"],
+            ["$metric:w:investments---tiktok-mmm$category:a", "$metric:w:investments---tiktok-mmm$category:b"],
             datetime(2024, 1, 1), datetime(2024, 1, 21),
             data_version="2026-01-01_000000",
         )
 
     mock_workspace.assert_called_once_with("some-workspace")
     kwargs = mock_ws.build_modelling_dataset.call_args.kwargs
-    assert kwargs["zero_fill"] == "media"
+    assert "zero_fill" not in kwargs
     assert kwargs["data_version"] == "2026-01-01_000000"
-    assert list(result.columns) == ["$metric:investments$category:a"]
+    assert list(result.columns) == ["$metric:w:investments---tiktok-mmm$category:a"]
+    assert not result.isna().any().any()

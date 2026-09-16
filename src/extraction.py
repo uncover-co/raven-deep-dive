@@ -298,9 +298,13 @@ def load_breakdown_spend(
         end_date=end_date,
         time_interval=time_interval,
         timezone=timezone,
-        zero_fill="media",
         data_version=data_version,
     )
+    # ducks' zero_fill="media" matches metric names by substring
+    # ("$metric:investments"/"$metric:impressions"); our real slugs (e.g.
+    # "$metric:w:investments---tiktok-mmm$...") don't match it, so fill
+    # unconditionally here instead -- matches the pre-ducks behavior.
+    df = df.fillna(0.0)
     zero_cols = [c for c in df.columns if (df[c] == 0).all()]
     if zero_cols:
         print(f"Dropping {len(zero_cols)} all-zero columns: {zero_cols}")
