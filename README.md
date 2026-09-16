@@ -360,8 +360,14 @@ clients:
 ### 8.2 Single-Client
 
 ```python
+# run_id, mlflow_uri, workspace_dd, start_date, end_date, output_dir: do client YAML.
 upgrade        = load_upgrade_stan(run_id, tracking_uri=mlflow_uri)
 config         = build_config(upgrade, specs_path="configs/bradesco_eletro.yaml")
+
+# upgrade.spend_df vem vazio -- popula com o breakdown real antes do diagnóstico.
+all_vars       = [v for slugs in config.vars_per_dim.values() for v in slugs]
+upgrade.spend_df = load_breakdown_spend(workspace_dd, all_vars, start_date, end_date)
+
 config, diag   = run_diagnostics(config, upgrade)
 result         = run_deep_dive(config, upgrade, auxiliary_metric_dfs=diag.auxiliary_metric_dfs)
 _              = analyze_deepdive(result)
