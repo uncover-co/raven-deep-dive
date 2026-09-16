@@ -5,6 +5,7 @@ git+ssh://git@github.com/uncover-co/mammoth.git
 git+ssh://git@github.com/uncover-co/pytoolkit-webserver-sdk.git
 git+ssh://git@github.com/uncover-co/uncoverpy-deploy.git
 git+ssh://git@github.com/uncover-co/autommm_mle.git
+git+ssh://git@github.com/uncover-co/ducks.git
 
 prophetverse>=0.12.0
 
