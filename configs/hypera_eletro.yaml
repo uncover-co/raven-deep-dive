@@ -6,7 +6,7 @@ vehicle_specs_path: "../data/vehicle_specs.yaml"
 
 model_type: meridian
 
-mlflow_tracking_uri: "https://mlflow-dev.cloud.uncover.co"
+mlflow_tracking_uri: "https://mlflow-datascience.cloud.uncover.co"
 upgrade_run_id: "f3efef2240ba4b6ab7bd364ee785ca75"
 
 # Workspace for breakdown spend (mammoth BuildDefaultDataset)

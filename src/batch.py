@@ -24,7 +24,7 @@ from extraction import UpgradeResult, load_upgrade_auto, load_breakdown_spend
 from pipeline import DDResult, run_deep_dive
 from report import generate_report
 
-DEFAULT_MLFLOW_URI = "https://mlflow-dev.cloud.uncover.co"
+DEFAULT_MLFLOW_URI = "https://mlflow-datascience.cloud.uncover.co"
 
 
 # ── Registry ──────────────────────────────────────────────────────────────────
@@ -91,7 +91,10 @@ def run_single_client(
 
         config, diag = run_diagnostics(config, upgrade)
 
-        result = run_deep_dive(config, upgrade, verbose=verbose, upgrade_run_id=run_id)
+        result = run_deep_dive(
+            config, upgrade, auxiliary_metric_dfs=diag.auxiliary_metric_dfs,
+            verbose=verbose, upgrade_run_id=run_id,
+        )
 
         generate_report(
             result,
@@ -184,20 +187,18 @@ def run_deep_dive_batch(
 # ── Hierarchy rollups ─────────────────────────────────────────────────────────
 
 def _build_slug_extractor(vehicle_spec: dict, bd_spec: dict):
-    """Build a slug→value extractor from templates in vehicle_spec.
-
-    Tries the breakdown's own `templates` override (any model_type) before the
-    vehicle's shared default_template/state_template — mirrors the priority
-    order in config._get_template(), so a breakdown with a fully custom slug
-    shape (e.g. extra $key:value segments) still extracts correctly.
-    """
+    """Build a slug->value extractor, mirroring config._get_template()'s
+    priority: breakdown-level `template` override wins over the vehicle's
+    default_template/state_template."""
     category = bd_spec.get("category", "")
     patterns = []
 
-    template_sources = list(bd_spec.get("templates", {}).values())
-    for model_spec in vehicle_spec.get("models", {}).values():
-        for tmpl_key in ("default_template", "state_template"):
-            template_sources.append(model_spec.get(tmpl_key, ""))
+    template_sources = []
+    if bd_spec.get("template"):
+        template_sources.append(bd_spec["template"])
+    model_spec = vehicle_spec.get("models", {})
+    for tmpl_key in ("default_template", "state_template"):
+        template_sources.append(model_spec.get(tmpl_key, ""))
 
     for tmpl in template_sources:
         for segment in tmpl.split("$"):

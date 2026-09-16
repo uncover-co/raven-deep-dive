@@ -71,11 +71,17 @@ def _run_raven_dim(
     use_piecewise_trend: bool = True,
     adstock_decay: float | None = None,
     auxiliary_metric_df: pd.DataFrame | None = None,
+    lower_funnel_variables: list[str] | None = None,
     verbose: bool = True,
 ) -> dict:
     """Fit Raven Hill model for one dimension.
     Features normalized per-column → Hill in [0,1].
     Target = media_dd_contrib (channel contribution, not full KPI).
+
+    lower_funnel_variables: sub-channels in `features_df` fit WITHOUT adstock
+    (immediate response), vs. the default (every sub-channel goes through
+    Raven's latent adstock layer). Default None/[] = current behavior, every
+    sub-channel adstocked.
     """
     media_dd_contrib = media_dd_contrib.copy()
     media_dd_contrib.index = wmon_norm(media_dd_contrib.index)
@@ -97,9 +103,12 @@ def _run_raven_dim(
     variaveis = list(features_df.columns)
     y2 = media_dd_contrib.to_frame(name="channel")
 
+    _lower_vars = [v for v in (lower_funnel_variables or []) if v in variaveis]
+    _upper_vars = [v for v in variaveis if v not in _lower_vars]
+
     features_raw = features_df.reindex(media_dd_contrib.index, fill_value=0)
-    if adstock_decay is not None and adstock_decay > 0:
-        features_raw = _apply_adstock_df(features_raw, adstock_decay)
+    if adstock_decay is not None and adstock_decay > 0 and _upper_vars:
+        features_raw[_upper_vars] = _apply_adstock_df(features_raw[_upper_vars], adstock_decay)
 
     col_maxes = features_raw[variaveis].max(axis=0).replace(0, 1.0)
     features_norm = features_raw[variaveis].div(col_maxes)
@@ -125,6 +134,10 @@ def _run_raven_dim(
             / (float(_ct.abs().max()) / _y2_max + 1e-12)
         )
 
+    if auxiliary_metric_df is not None:
+        auxiliary_metric_df = auxiliary_metric_df.copy()
+        auxiliary_metric_df.index = wmon_norm(auxiliary_metric_df.index)
+
     _csl = ContributionShareLikelihood(
         target_effect_names=[
             f"latent/contribution/media/{quote(v, safe='')}" for v in variaveis
@@ -141,8 +154,8 @@ def _run_raven_dim(
     _trend = PiecewiseLinearTrend(changepoint_interval=52) if use_piecewise_trend else FlatTrend()
 
     raven2 = Raven(
-        upper_funnel_variables=variaveis,
-        lower_funnel_variables=[],
+        upper_funnel_variables=_upper_vars,
+        lower_funnel_variables=_lower_vars,
         proxy_variable_mapping={_proxy_col: variaveis},
         proxy_type={_proxy_col: "exact"},
         proxy_likelihood_scale=_proxy_scale,
@@ -243,6 +256,16 @@ def run_deep_dive(
 
         print(f"▶ [{dim}]  ({len(available)} vars)")
         _aux = (auxiliary_metric_dfs or {}).get(dim)
+        _configured_lower = config.lower_funnel_vars_per_dim.get(dim, [])
+        _lower_vars = [v for v in _configured_lower if v in available]
+        _dropped_lower = [v for v in _configured_lower if v not in available]
+        if _dropped_lower:
+            print(
+                f"  [WARNING] [{dim}] {len(_dropped_lower)} lower_funnel_vars_per_dim entr"
+                f"{'y' if len(_dropped_lower) == 1 else 'ies'} not in available vars (likely "
+                f"bucketed into __outros__ by diagnostics) — falling back to upper funnel "
+                f"(adstocked) for: {_dropped_lower}"
+            )
         r = _run_raven_dim(
             dim_name=dim,
             features_df=upgrade.spend_df[available].copy(),
@@ -252,6 +275,7 @@ def run_deep_dive(
             num_steps=config.num_steps,
             verbose=verbose,
             auxiliary_metric_df=_aux,
+            lower_funnel_variables=_lower_vars,
         )
 
         models[dim] = r["model"]

@@ -8,7 +8,7 @@ vehicle_specs_path: "../data/vehicle_specs.yaml"
 
 model_type: meridian
 
-mlflow_tracking_uri: "https://mlflow-dev.cloud.uncover.co"
+mlflow_tracking_uri: "https://mlflow-datascience.cloud.uncover.co"
 upgrade_run_id: "14b7c85824a84eb3b328c9b75fa066f2"   
 
 workspace_dd: "ba---tiktok---deepdive"          
@@ -18,6 +18,10 @@ end_date:   "2025-07-21"
 media_var: "TikTok Ads"             
 
 dimensions: null
+
+# Share likelihood deve usar exposição, não investimento (ver README).
+# Validado: proxy_ratio/R²/WAPE praticamente iguais ao investimento, sem regressão.
+auxiliary_metric: "w:impressions---tiktok-mmm"
 
 share_prior_scale: 0.05
 proxy_ct_tolerance: 0.15

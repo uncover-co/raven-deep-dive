@@ -17,6 +17,8 @@ def _fake_ddresult():
         shares_spend={"Praca": pd.Series({"sp": 0.60, "rj": 0.40})},
         proxy_ratios={"Praca": 0.98},
         csl_devs={"Praca": 0.04},
+        r2={"Praca": 0.9},
+        wape={"Praca": 0.1},
         media_dd_contrib=pd.Series(np.ones(10) * 150, index=idx),
         config=DeepDiveConfig(
             dims=["Praca"],

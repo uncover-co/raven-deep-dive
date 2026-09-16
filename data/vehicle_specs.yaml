@@ -1,58 +1,5 @@
 vehicles:
 
-  tiktok:
-    vehicle_slug: tiktok
-    default_metric: "w:investments---tiktok-mmm"
-    metrics:
-      stan:
-        - "w:investments---tiktok-mmm"
-        - "w:impressions---tiktok-mmm"
-      meridian:
-        - "w:investments---tiktok-mmm"
-        - "w:impressions---tiktok-mmm"
-
-    models:
-      stan:
-        default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
-      meridian:
-        default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
-
-    breakdowns:
-      product_level_1:
-        category: product-level-2
-        values:
-          - branding
-          - performance
-
-      campaign_category:
-        category: campaign-category
-        templates:
-          stan:    "$metric:{metric}$category:brand:{brand}$category:{category}:{value}$category:product-level-1:tiktok"
-          meridian: "$metric:{metric}$category:brand:{brand}$category:{category}:{value}$category:product-level-1:tiktok"
-        values:
-          - brand-auction
-          - brand-reservation
-          - performance-auction
-          - reach-frequency
-
-      product_level_4:
-        category: product-level-4
-        values:
-          - "-"
-          - android-mai
-          - app-retargeting
-          - app-traffic
-          - brand-auction--community-interaction-
-          - brand-auction--reach-
-          - brand-auction--videoview-
-          - openscreen
-          - standard-feed
-          - top-feed
-          - vsa--non-shop--app
-          - web-conversions
-          - web-traffic
-          - web-vbo
-
   # Stellantis (fastback/pulse) — conexão TikTok própria, dedicada por nameplate
   # (institucional,fastback / institucional,pulse). Vehicle key separada da
   # `tiktok` genérica para não vazar model_dims/connection id pros outros
@@ -60,13 +7,6 @@ vehicles:
   tiktok_stellantis:
     vehicle_slug: tiktok
     default_metric: "w:investments---tiktok-mmm"
-    metrics:
-      stan:
-        - "w:investments---tiktok-mmm"
-        - "w:impressions---tiktok-mmm"
-      meridian:
-        - "w:investments---tiktok-mmm"
-        - "w:impressions---tiktok-mmm"
 
     # Modela só na granularidade máxima; product_level_2 é derivado por rollup
     # via hierarquia declarada em product_level_3.
@@ -74,17 +14,12 @@ vehicles:
       - product_level_3
 
     models:
-      stan:
-        default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
-      meridian:
-        default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
+      default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
 
     breakdowns:
       product_level_2:
         category: product-level-2--old-
-        templates:
-          stan:     "$metric:{metric}$_connection:85714b73-e500-42c2-8c49-3c00306e5171$nameplate:{nameplate}${category}:{value}"
-          meridian: "$metric:{metric}$_connection:85714b73-e500-42c2-8c49-3c00306e5171$nameplate:{nameplate}${category}:{value}"
+        template: "$metric:{metric}$_connection:85714b73-e500-42c2-8c49-3c00306e5171$nameplate:{nameplate}${category}:{value}"
         values:
           - branding
           - pangle
@@ -92,9 +27,7 @@ vehicles:
 
       product_level_3:
         category: product-level-3--old-
-        templates:
-          stan:     "$metric:{metric}$_connection:85714b73-e500-42c2-8c49-3c00306e5171$nameplate:{nameplate}${category}:{value}"
-          meridian: "$metric:{metric}$_connection:85714b73-e500-42c2-8c49-3c00306e5171$nameplate:{nameplate}${category}:{value}"
+        template: "$metric:{metric}$_connection:85714b73-e500-42c2-8c49-3c00306e5171$nameplate:{nameplate}${category}:{value}"
         rollups:
           - level: product_level_2
             map: pl3_to_pl2

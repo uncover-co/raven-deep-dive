@@ -15,8 +15,9 @@ from extraction import UpgradeResult
 @dataclass
 class DiagnosisResult:
     spend_report: pd.DataFrame       # per-var stats: share, HHI, semanas_ativas, keep
-    bucketed: dict[str, list[str]]   # dim → vars bucketed into __outros__
+    bucketed: dict[str, list[str]]  # dim -> variables bucketed into __outros__
     skipped_dims: list[str]          # dims skipped (HHI too high or < 2 active)
+    auxiliary_metric_dfs: dict[str, pd.DataFrame] | None = None  # dim → df aligned to final kept cols (config.auxiliary_metric values), feeds ContributionShareLikelihood prior only
 
 
 def run_diagnostics(
@@ -25,6 +26,7 @@ def run_diagnostics(
     min_spend_share: float | None = None,
     hhi_threshold: float | None = None,
     min_active_weeks: int | None = None,
+    min_active_weeks_frac: float | None = None,
 ) -> tuple[DeepDiveConfig, DiagnosisResult]:
     """Filter config vars by spend structure; bucket tiny vars into __outros__.
 
@@ -35,23 +37,57 @@ def run_diagnostics(
     min_spend_share = min_spend_share if min_spend_share is not None else config.min_spend_share
     hhi_threshold = hhi_threshold if hhi_threshold is not None else config.hhi_threshold
     min_active_weeks = min_active_weeks if min_active_weeks is not None else config.min_active_weeks
+    min_active_weeks_frac = (
+        min_active_weeks_frac if min_active_weeks_frac is not None else config.min_active_weeks_frac
+    )
+    if not config.share_likelihood_metric:
+        raise ValueError(
+            "config.share_likelihood_metric is not set. build_config() always fills this in; "
+            "if you built DeepDiveConfig by hand, pass share_likelihood_metric explicitly."
+        )
 
     df = upgrade.spend_df.copy()
     rows: list[dict] = []
     new_vars_per_dim: dict[str, list[str]] = {}
     bucketed: dict[str, list[str]] = {}
     skipped_dims: list[str] = []
+    # Carried through as-is, except: an __outros__ bucket where every member
+    # was itself configured lower funnel inherits that (a residual made only
+    # of no-adstock variables is still no-adstock). A mixed bucket (some
+    # members lower, some not) has no unambiguous answer -- it keeps the
+    # existing system-wide default (upper/adstocked) rather than guessing;
+    # see README Sec. 11 for why this is a known, accepted limitation.
+    new_lower_funnel_vars_per_dim = {k: list(v) for k, v in config.lower_funnel_vars_per_dim.items()}
     n_weeks = len(df)
+    effective_min_weeks = max(min_active_weeks, round(min_active_weeks_frac * n_weeks))
 
-    # Só as slugs da share_likelihood_metric entram no HHI/pct que decide
-    # keep/exclude/SKIP e, portanto, no que alimenta ContributionShareLikelihood
-    # (config.share_likelihood_metric, default = métrica com "invest" no nome).
-    # Outras métricas fetchadas pro mesmo dim (ex.: impressions no meridian)
-    # ainda aparecem no relatório como informação, mas não travam nada — uma
-    # quebra com investimento concentrado mas exposição bem distribuída não
-    # deve ser penalizada pela métrica que não está sendo modelada.
+    # share_likelihood_metric é sempre o regressor da curva Hill; nunca muda.
     share_metric = config.share_likelihood_metric
     metric_prefix = f"$metric:{share_metric}$" if share_metric else None
+
+    # auxiliary_metric nunca vira regressor — só SUBSTITUI investimento como
+    # base do gate (concentração/semanas ativas) quando disponível pro dim,
+    # e alimenta o prior do CSL. Sem dado auxiliar, cai pra investimento.
+    aux_metric = config.auxiliary_metric
+    aux_prefix = f"$metric:{aux_metric}$" if aux_metric else None
+    aux_dfs: dict[str, pd.DataFrame] = {}
+
+    def _stats_for(prefix: str | None, tail_of: dict[str, str]) -> dict[str, dict]:
+        out = {}
+        for key, tail in tail_of.items():
+            slug = (prefix or "") + tail
+            if prefix and slug in df.columns:
+                s = df[slug]
+                out[key] = {"total": float(s.sum()), "active": int((s > 0).sum())}
+            else:
+                out[key] = {"total": 0.0, "active": 0}
+        return out
+
+    def _hhi_of(stats_: dict[str, dict]) -> tuple[float, float, int]:
+        total = sum(v["total"] for v in stats_.values())
+        n_active = sum(1 for v in stats_.values() if v["total"] > 0)
+        hhi = sum((v["total"] / total) ** 2 for v in stats_.values()) if total > 0 else 1.0
+        return total, hhi, n_active
 
     for dim, all_slugs in config.vars_per_dim.items():
         if metric_prefix:
@@ -60,58 +96,63 @@ def run_diagnostics(
         else:
             slugs, other_slugs = all_slugs, []
 
-        for slug in other_slugs:
-            if slug in df.columns:
-                s = df[slug]
-                d = {"total": float(s.sum()), "active": int((s > 0).sum())}
-            else:
-                d = {"total": 0.0, "active": 0}
-            rows.append(_make_row(
-                dim, slug, d, 0.0, n_weeks, float("nan"), rec="INFO", keep=False,
-                reason="outra métrica (não é share_likelihood_metric)", reason_code="other_metric",
-            ))
+        if not aux_prefix:
+            for slug in other_slugs:
+                if slug in df.columns:
+                    s = df[slug]
+                    d = {"total": float(s.sum()), "active": int((s > 0).sum())}
+                else:
+                    d = {"total": 0.0, "active": 0}
+                rows.append(_make_row(
+                    dim, slug, d, 0.0, n_weeks, float("nan"), rec="INFO", keep=False,
+                    reason="outra métrica (não é share_likelihood_metric)", reason_code="other_metric",
+                ))
 
         if not slugs:
             skipped_dims.append(dim)
             continue
 
-        stats: dict[str, dict] = {}
-        for slug in slugs:
-            if slug in df.columns:
-                s = df[slug]
-                stats[slug] = {"total": float(s.sum()), "active": int((s > 0).sum())}
-            else:
-                stats[slug] = {"total": 0.0, "active": 0}
+        tail_of = {slug: slug[len(metric_prefix):] for slug in slugs}
+        primary_stats: dict[str, dict] = _stats_for(metric_prefix, tail_of)
+        aux_stats: dict[str, dict] = _stats_for(aux_prefix, tail_of) if aux_prefix else {}
+        aux_available = aux_prefix is not None and sum(v["total"] for v in aux_stats.values()) > 0
 
-        cat_total = sum(v["total"] for v in stats.values())
-        n_active = sum(1 for v in stats.values() if v["total"] > 0)
-        hhi = (
-            sum((v["total"] / cat_total) ** 2 for v in stats.values())
-            if cat_total > 0 else 1.0
-        )
+        # gate_stats decide keep/exclude; kept/excl continuam com as slugs de
+        # investimento (tail_of), que é o que vira regressor.
+        gate_stats = aux_stats if aux_available else primary_stats
+        gate_label = "aux" if aux_available else "invest"
+        cat_total, hhi, n_active = _hhi_of(gate_stats)
 
         if n_active < 2 or hhi > hhi_threshold:
             skipped_dims.append(dim)
-            for slug, d in stats.items():
-                rows.append(_make_row(dim, slug, d, cat_total, n_weeks, hhi, rec="SKIP", keep=False, reason="dim SKIP", reason_code="dim_skip"))
+            for slug, d in gate_stats.items():
+                rows.append(_make_row(dim, slug, d, cat_total, n_weeks, hhi, rec="SKIP", keep=False, reason=f"dim SKIP ({gate_label})", reason_code="dim_skip"))
             continue
 
         kept, excl = [], []
-        for slug, d in stats.items():
+        for slug in tail_of:
+            d = gate_stats[slug]
             pct = d["total"] / cat_total if cat_total > 0 else 0.0
             if d["total"] == 0:
-                keep, reason, rc = False, "sem spend", "no_spend"
+                keep, reason, rc = False, f"sem spend ({gate_label})", "no_spend"
             elif pct < min_spend_share:
-                keep, reason, rc = False, f"pct {pct:.1%} < {min_spend_share:.0%}", "low_pct"
-            elif d["active"] < min_active_weeks:
-                keep, reason, rc = False, f"só {d['active']} semana(s)", "low_weeks"
+                keep, reason, rc = False, f"pct {pct:.1%} < {min_spend_share:.0%} ({gate_label})", "low_pct"
+            elif d["active"] < effective_min_weeks:
+                keep, reason, rc = False, f"só {d['active']} semana(s) < {effective_min_weeks} ({gate_label})", "low_weeks"
+            elif gate_label == "aux" and primary_stats[slug]["total"] == 0:
+                # Passou no gate de exposição, mas não existe investimento pra
+                # essa slug (coluna ausente/all-zero na extração) -- sem isso
+                # não há série pra virar regressor.
+                keep, reason, rc = False, "sem investimento (coluna ausente)", "no_primary_col"
             else:
                 keep, reason, rc = True, "", "kept"
 
-            rows.append(_make_row(dim, slug, d, cat_total, n_weeks, hhi, rec="DD", keep=keep, reason=reason, reason_code=rc))
+            # Reporta na mesma base que decidiu (investimento ou auxiliar).
+            row = _make_row(dim, slug, d, cat_total, n_weeks, hhi, rec="DD", keep=keep, reason=reason, reason_code=rc)
+            rows.append(row)
             if keep:
                 kept.append(slug)
-            elif d["total"] > 0:
+            elif primary_stats[slug]["total"] > 0:
                 excl.append(slug)
 
         if kept:
@@ -120,7 +161,37 @@ def run_diagnostics(
                 df[outros_col] = df[excl].sum(axis=1)
                 kept.append(outros_col)
                 bucketed[dim] = excl
+
+                configured_lower = set(config.lower_funnel_vars_per_dim.get(dim, []))
+                excl_lower = [v for v in excl if v in configured_lower]
+                # excl members no longer exist as standalone slugs.
+                if dim in new_lower_funnel_vars_per_dim:
+                    new_lower_funnel_vars_per_dim[dim] = [
+                        v for v in new_lower_funnel_vars_per_dim[dim] if v not in excl
+                    ]
+                if excl_lower and len(excl_lower) == len(excl):
+                    new_lower_funnel_vars_per_dim.setdefault(dim, []).append(outros_col)
+                    print(f"  [{dim}] {outros_col}: all {len(excl)} bucketed members are "
+                          f"configured lower funnel -> outros inherits lower funnel too.")
+                elif excl_lower:
+                    print(f"  [WARNING] [{dim}] {outros_col}: {len(excl_lower)}/{len(excl)} "
+                          f"bucketed members are configured lower funnel, mixed with upper-"
+                          f"funnel members -> no unambiguous classification, defaulting the "
+                          f"whole aggregate to upper funnel (adstocked). See README Sec. 11.")
             new_vars_per_dim[dim] = kept
+
+            if aux_prefix and aux_available:
+                aux_cols = {}
+                for slug in new_vars_per_dim[dim]:
+                    if slug.startswith("__outros__"):
+                        members = bucketed.get(dim, [])
+                        aux_slugs = [aux_prefix + m[len(metric_prefix):] for m in members]
+                        present = [a for a in aux_slugs if a in df.columns]
+                        aux_cols[slug] = df[present].sum(axis=1) if present else pd.Series(0.0, index=df.index)
+                    else:
+                        aux_slug = aux_prefix + slug[len(metric_prefix):]
+                        aux_cols[slug] = df[aux_slug] if aux_slug in df.columns else pd.Series(0.0, index=df.index)
+                aux_dfs[dim] = pd.DataFrame(aux_cols, index=df.index)
 
     # Update spend_df in-place so downstream pipeline sees __outros__ cols
     upgrade.spend_df = df
@@ -137,18 +208,22 @@ def run_diagnostics(
         model_type=config.model_type,
         model_name=config.model_name,
         share_likelihood_metric=config.share_likelihood_metric,
+        auxiliary_metric=config.auxiliary_metric,
         share_prior_scale=config.share_prior_scale,
         proxy_ct_tolerance=config.proxy_ct_tolerance,
         num_steps=config.num_steps,
         min_spend_share=min_spend_share,
         hhi_threshold=hhi_threshold,
         min_active_weeks=min_active_weeks,
+        min_active_weeks_frac=min_active_weeks_frac,
         vehicle_spec=config.vehicle_spec,
+        lower_funnel_vars_per_dim=new_lower_funnel_vars_per_dim,
     )
     return new_config, DiagnosisResult(
         spend_report=spend_report,
         bucketed=bucketed,
         skipped_dims=skipped_dims,
+        auxiliary_metric_dfs=aux_dfs or None,
     )
 
 
