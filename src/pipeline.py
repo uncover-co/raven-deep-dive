@@ -4,7 +4,6 @@ from typing import Any
 from urllib.parse import quote
 import warnings
 import jax
-import numpy as np
 import pandas as pd
 
 from contrib_share_likelihood import ContributionShareLikelihood
@@ -47,20 +46,6 @@ def align_to(src: pd.Series, target_idx) -> pd.Series:
     return s
 
 
-def _apply_adstock_df(df: pd.DataFrame, decay: float) -> pd.DataFrame:
-    result = df.copy()
-    for col in df.columns:
-        s = df[col].values.astype(float)
-        adst = np.zeros(len(s))
-        for t in range(len(s)):
-            adst[t] = decay * adst[t - 1] + (1 - decay) * s[t] if t > 0 else s[t]
-        mx_orig, mx_adst = s.max(), adst.max()
-        if mx_adst > 0:
-            adst = adst * mx_orig / mx_adst
-        result[col] = adst
-    return result
-
-
 def _run_raven_dim(
     dim_name: str,
     features_df: pd.DataFrame,
@@ -69,7 +54,6 @@ def _run_raven_dim(
     proxy_ct_tolerance: float = 0.15,
     num_steps: int = 30_000,
     use_piecewise_trend: bool = True,
-    adstock_decay: float | None = None,
     auxiliary_metric_df: pd.DataFrame | None = None,
     lower_funnel_variables: list[str] | None = None,
     verbose: bool = True,
@@ -107,8 +91,6 @@ def _run_raven_dim(
     _upper_vars = [v for v in variaveis if v not in _lower_vars]
 
     features_raw = features_df.reindex(media_dd_contrib.index, fill_value=0)
-    if adstock_decay is not None and adstock_decay > 0 and _upper_vars:
-        features_raw[_upper_vars] = _apply_adstock_df(features_raw[_upper_vars], adstock_decay)
 
     col_maxes = features_raw[variaveis].max(axis=0).replace(0, 1.0)
     features_norm = features_raw[variaveis].div(col_maxes)
