@@ -62,7 +62,7 @@ def run_diagnostics(
     # of no-adstock variables is still no-adstock). A mixed bucket (some
     # members lower, some not) has no unambiguous answer -- it keeps the
     # existing system-wide default (upper/adstocked) rather than guessing;
-    # see README Sec. 11 for why this is a known, accepted limitation.
+    # see README Sec. 8 for why this is a known, accepted limitation.
     new_lower_funnel_vars_per_dim = {k: list(v) for k, v in config.lower_funnel_vars_per_dim.items()}
     n_weeks = len(df)
     effective_min_weeks = max(min_active_weeks, round(min_active_weeks_frac * n_weeks))
@@ -173,7 +173,7 @@ def run_diagnostics(
                     print(f"  [WARNING] [{dim}] {others_col}: {len(excl_lower)}/{len(excl)} "
                           f"bucketed members are configured lower funnel, mixed with upper-"
                           f"funnel members -> no unambiguous classification, defaulting the "
-                          f"whole aggregate to upper funnel (adstocked). See README Sec. 11.")
+                          f"whole aggregate to upper funnel (adstocked). See README Sec. 8.")
             new_vars_per_dim[dim] = kept
 
             aux_cols = {}
