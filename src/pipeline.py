@@ -56,6 +56,7 @@ def _run_raven_dim(
     use_piecewise_trend: bool = True,
     auxiliary_metric_df: pd.DataFrame | None = None,
     lower_funnel_variables: list[str] | None = None,
+    upper_funnel_adstock_effect: Any | None = None,
     verbose: bool = True,
 ) -> dict:
     """Fit Raven Hill model for one dimension.
@@ -138,6 +139,7 @@ def _run_raven_dim(
     raven2 = Raven(
         upper_funnel_variables=_upper_vars,
         lower_funnel_variables=_lower_vars,
+        upper_funnel_adstock_effect=upper_funnel_adstock_effect,
         proxy_variable_mapping={_proxy_col: variaveis},
         proxy_type={_proxy_col: "exact"},
         proxy_likelihood_scale=_proxy_scale,
@@ -264,6 +266,7 @@ def run_deep_dive(
             verbose=verbose,
             auxiliary_metric_df=_aux,
             lower_funnel_variables=_lower_vars,
+            upper_funnel_adstock_effect=config.upper_funnel_adstock_effect_per_dim.get(dim),
         )
 
         models[dim] = r["model"]

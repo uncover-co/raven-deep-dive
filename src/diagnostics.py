@@ -213,6 +213,7 @@ def run_diagnostics(
         min_active_weeks_frac=min_active_weeks_frac,
         vehicle_spec=config.vehicle_spec,
         lower_funnel_vars_per_dim=new_lower_funnel_vars_per_dim,
+        upper_funnel_adstock_effect_per_dim=dict(config.upper_funnel_adstock_effect_per_dim),
     )
     return new_config, DiagnosisResult(
         spend_report=spend_report,

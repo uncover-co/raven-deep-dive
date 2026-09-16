@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
-import yaml
+from mmmverse.spec.yaml import from_yaml
 
 
 @dataclass
@@ -28,17 +28,19 @@ class DeepDiveConfig:
     # {dim_name: [slug, ...]} fit WITHOUT adstock; rest of the dim keeps adstock.
     # Vehicle-agnostic: pipeline only sees slugs, no funnel/branding concept baked in.
     lower_funnel_vars_per_dim: dict[str, list[str]] = field(default_factory=dict)
-
-
-if "!class" not in yaml.SafeLoader.yaml_constructors:
-    yaml.SafeLoader.add_constructor(
-        "!class", lambda loader, node: loader.construct_scalar(node)
-    )
+    # {dim_name: BaseEffect | {slug: BaseEffect}} custom adstock for upper-funnel
+    # vars in that dim (single effect for all, or one per slug -- mmmverse
+    # requires every upper-funnel slug present when it's a dict). Missing dim
+    # entry = library default for that whole dim.
+    upper_funnel_adstock_effect_per_dim: dict[str, Any] = field(default_factory=dict)
 
 
 def _load_yaml(path: str) -> dict:
+    """Load a YAML file. Uses mmmverse's spec loader, so !instance/!params
+    mappings deserialize into real Python objects (e.g. a custom adstock
+    effect) -- same mechanism production model_specs use."""
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+        return from_yaml(f.read()) or {}
 
 
 def _get_template(vehicle_spec: dict, breakdown_spec: dict) -> str:
@@ -222,4 +224,5 @@ def build_config(
         min_active_weeks_frac=cfg.get("min_active_weeks_frac", 0.05),
         vehicle_spec=vehicle_spec,
         lower_funnel_vars_per_dim=cfg.get("lower_funnel_vars_per_dim") or {},
+        upper_funnel_adstock_effect_per_dim=cfg.get("upper_funnel_adstock_effect_per_dim") or {},
     )
