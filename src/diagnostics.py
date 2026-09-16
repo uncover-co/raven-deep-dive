@@ -252,10 +252,10 @@ def _print_diagnosis(diag_df: pd.DataFrame, min_pct: float, hhi_threshold: float
             print(f"  {flag}{dim:<26}  {rec:>5}  {hhi:>5.2f}  {n_tot:>6}  {n_kp:>6}  {n_ex:>6}")
             for _, row in main[~main["keep"]].iterrows():
                 label = _slug_label(row["slug"])
-                print(f"       ↳ {label:<24}  {row['pct_dim']:>6.1%}  {row['reason']}")
+                print(f"       ↳ {label:<24}  {row['pct_gate_dim']:>6.1%}  {row['reason']}")
             outros_rows = main[main["slug"].str.startswith("__outros__") & main["keep"]]
             for _, row in outros_rows.iterrows():
-                print(f"       → {'outros':<24}  {row['pct_dim']:>6.1%}  {row['reason']}")
+                print(f"       → {'outros':<24}  {row['pct_gate_dim']:>6.1%}  {row['reason']}")
         for _, row in info.iterrows():
             label = _slug_label(row["slug"])
             print(f"       ·  {label:<24}  {row['reason']}")
@@ -275,8 +275,8 @@ def _make_row(dim, slug, d, cat_total, n_weeks, hhi, rec, keep, reason, reason_c
     return {
         "dim": dim,
         "slug": slug,
-        "spend_total": d["total"],
-        "pct_dim": pct,
+        "gate_total": d["total"],
+        "pct_gate_dim": pct,
         "semanas_ativas": d["active"],
         "pct_ativo": d["active"] / n_weeks if n_weeks > 0 else 0.0,
         "hhi": round(hhi, 3),

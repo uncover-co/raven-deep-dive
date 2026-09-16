@@ -363,9 +363,9 @@ clients:
 upgrade        = load_upgrade_stan(run_id, tracking_uri=mlflow_uri)
 config         = build_config(upgrade, specs_path="configs/bradesco_eletro.yaml")
 config, diag   = run_diagnostics(config, upgrade)
-result         = run_deep_dive(config, upgrade)
+result         = run_deep_dive(config, upgrade, auxiliary_metric_dfs=diag.auxiliary_metric_dfs)
 _              = analyze_deepdive(result)
-               generate_report(result, diag=diag, output_dir=output_dir, client_name="bradesco")
+generate_report(result, diag=diag, output_dir=output_dir, client_name="bradesco")
 # outputs em: outputs/bradesco_eletromidia/
 ```
 

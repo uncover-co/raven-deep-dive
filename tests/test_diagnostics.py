@@ -176,5 +176,5 @@ def test_raises_when_auxiliary_metric_not_set_on_config():
 def test_spend_report_columns():
     cfg, upgrade = _make_fixtures()
     _, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
-    expected_cols = {"dim", "slug", "spend_total", "pct_dim", "semanas_ativas", "hhi", "keep"}
+    expected_cols = {"dim", "slug", "gate_total", "pct_gate_dim", "semanas_ativas", "hhi", "keep"}
     assert expected_cols.issubset(set(diag.spend_report.columns))

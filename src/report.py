@@ -230,8 +230,8 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
             "status": _status(r),
             "reason": r["reason"],
             "semanas_ativas": r["semanas_ativas"],
-            "spend_total": r["spend_total"],
-            "pct_spend_dim": r["pct_dim"],
+            "gate_total": r["gate_total"],
+            "pct_gate_dim": r["pct_gate_dim"],
             "contrib_total": ct,
             "pct_contrib_dim": pct_c,
         })
@@ -249,8 +249,8 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
             "status": "outros_aggregate",
             "reason": f"agrupa {len(bucketed_slugs)} quebra(s)",
             "semanas_ativas": int(base["semanas_ativas"].max()) if len(base) else None,
-            "spend_total": float(base["spend_total"].sum()) if len(base) else None,
-            "pct_spend_dim": float(base["pct_dim"].sum()) if len(base) else None,
+            "gate_total": float(base["gate_total"].sum()) if len(base) else None,
+            "pct_gate_dim": float(base["pct_gate_dim"].sum()) if len(base) else None,
             "contrib_total": ct,
             "pct_contrib_dim": pct_c,
         })
