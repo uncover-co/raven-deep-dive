@@ -14,12 +14,11 @@ vehicles:
       - product_level_3
 
     models:
-      default_template: "$metric:{metric}$category:brand:{brand}$category:product-level-1:tiktok$category:{category}:{value}"
+      default_template: "$metric:{metric}$_connection:85714b73-e500-42c2-8c49-3c00306e5171$nameplate:{nameplate}${category}:{value}"
 
     breakdowns:
       product_level_2:
         category: product-level-2--old-
-        template: "$metric:{metric}$_connection:85714b73-e500-42c2-8c49-3c00306e5171$nameplate:{nameplate}${category}:{value}"
         values:
           - branding
           - pangle
@@ -27,7 +26,6 @@ vehicles:
 
       product_level_3:
         category: product-level-3--old-
-        template: "$metric:{metric}$_connection:85714b73-e500-42c2-8c49-3c00306e5171$nameplate:{nameplate}${category}:{value}"
         rollups:
           - level: product_level_2
             map: pl3_to_pl2
