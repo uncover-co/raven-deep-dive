@@ -116,13 +116,16 @@ def generate_report(
         if c_df is None:
             continue
         html_w = os.path.join(out, f"weekly_{dim}.html")
-        plot_weekly_df(c_df, ct, title=f"Weekly Contributions — {dim}").write_html(html_w)
+        plot_weekly_df(
+            c_df, ct, title=f"Weekly Contributions — {dim}", model_type=result.config.model_type
+        ).write_html(html_w)
         paths[f"html_weekly_{dim}"] = html_w
 
         for level, rollup_df in rollup_contribs_map.get(dim, {}).items():
             html_w = os.path.join(out, f"weekly_{dim}_{level}.html")
             plot_weekly_df(
-                rollup_df, ct, title=f"Weekly Contributions — {dim} → {level}"
+                rollup_df, ct, title=f"Weekly Contributions — {dim} → {level}",
+                model_type=result.config.model_type,
             ).write_html(html_w)
             paths[f"html_weekly_{dim}_{level}"] = html_w
 

@@ -7,7 +7,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
-from extraction import UpgradeResult, load_upgrade_stan, load_raven_upgrade
+from extraction import UpgradeResult, load_upgrade_stan, load_raven_upgrade, _download_export_input_parquets
 
 
 def test_upgrade_result_fields():
@@ -139,3 +139,53 @@ def test_load_breakdown_spend_drops_all_zero_columns_and_pins_data_version():
     assert kwargs["zero_fill"] is True
     assert kwargs["data_version"] == "2026-01-01_000000"
     assert list(result.columns) == ["$metric:w:investments---tiktok-mmm$category:a"]
+
+
+def test_download_export_input_parquets_full_cache_hit_skips_download():
+    """Both files already cached -> reused as-is, no download_artifacts call."""
+    with tempfile.TemporaryDirectory() as cache_dir:
+        run_dir = os.path.join(cache_dir, "fake-run-id")
+        os.makedirs(run_dir)
+        export_cached = os.path.join(run_dir, "export_data.parquet")
+        input_cached = os.path.join(run_dir, "input_data.parquet")
+        open(export_cached, "w").close()
+        open(input_cached, "w").close()
+
+        mock_client = MagicMock()
+        with patch("mlflow.tracking.MlflowClient", mock_client):
+            export_path, input_path, _ = _download_export_input_parquets(
+                "fake-run-id", tracking_uri=None, cache_dir=cache_dir
+            )
+
+        assert export_path == export_cached
+        assert input_path == input_cached
+        mock_client.return_value.download_artifacts.assert_not_called()
+
+
+def test_download_export_input_parquets_partial_cache_redownloads_both():
+    """Only export_data.parquet cached (e.g. an interrupted prior download) ->
+    must NOT be treated as a cache hit; both files are re-downloaded."""
+    with tempfile.TemporaryDirectory() as cache_dir, tempfile.TemporaryDirectory() as dl_dir:
+        run_dir = os.path.join(cache_dir, "fake-run-id")
+        os.makedirs(run_dir)
+        export_cached = os.path.join(run_dir, "export_data.parquet")
+        open(export_cached, "w").close()
+        # input_data.parquet deliberately missing.
+
+        dl_export = os.path.join(dl_dir, "export_data.parquet")
+        dl_input = os.path.join(dl_dir, "input_data.parquet")
+        open(dl_export, "w").close()
+        open(dl_input, "w").close()
+
+        mock_client = MagicMock()
+        mock_client.return_value.download_artifacts.side_effect = [dl_export, dl_input]
+        with patch("mlflow.tracking.MlflowClient", mock_client):
+            export_path, input_path, _ = _download_export_input_parquets(
+                "fake-run-id", tracking_uri=None, cache_dir=cache_dir
+            )
+
+        assert mock_client.return_value.download_artifacts.call_count == 2
+        # Re-downloaded files get copied back into the cache dir.
+        assert export_path == os.path.join(run_dir, "export_data.parquet")
+        assert input_path == os.path.join(run_dir, "input_data.parquet")
+        assert os.path.exists(input_path)

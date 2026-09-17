@@ -249,7 +249,7 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 | Arquivo | O Que Cobre |
 |---|---|
 | `test_config.py` | Parsing de YAML, defaults do dataclass |
-| `test_extraction.py` | Mock MLflow, campos do UpgradeResult, parquets |
+| `test_extraction.py` | Mock MLflow, campos do UpgradeResult, parquets, cache completo vs. parcial |
 | `test_diagnostics.py` | Filtro por spend, bucketing `__others__`, colunas do spend_report |
 | `test_slug_genericity.py` | `build_config`/`_build_vars_per_dim`: templates, placeholders, cross-product de métricas |
 | `test_funnel_split.py` | `lower_funnel_vars_per_dim`: fit sem adstock por sub-canal, herança em `__others__` |

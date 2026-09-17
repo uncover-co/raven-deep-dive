@@ -101,7 +101,7 @@ def plot_weekly(result, dim: str) -> go.Figure:
     ct = align_to(result.media_dd_contrib, contribs.index)
     fig.add_trace(go.Scatter(
         x=ct.index, y=ct.values,
-        name="C_t total (Stan)",
+        name=f"C_t total ({result.config.model_type.capitalize()})",
         mode="lines",
         line=dict(color="#FFFFFF", width=2, dash="dot"),
     ))
@@ -118,6 +118,7 @@ def plot_weekly_df(
     contribs: pd.DataFrame,
     ct: pd.Series,
     title: str = "",
+    model_type: str | None = None,
 ) -> go.Figure:
     """Stacked area: weekly contributions from an arbitrary contribs DataFrame + C_t overlay.
 
@@ -125,6 +126,8 @@ def plot_weekly_df(
         contribs: DataFrame(datetime index, columns=channel names).
         ct: C_t total series (media_dd_contrib). Aligned to contribs index automatically.
         title: chart title.
+        model_type: base MMM anchoring C_t ("stan", "meridian", "raven"), for the
+            overlay's legend label. Omit when unknown -- labeled "MMM base" then.
     """
     ct_aligned = align_to(ct, contribs.index)
     fig = go.Figure()
@@ -138,9 +141,10 @@ def plot_weekly_df(
             fillcolor=UNCOVER_COLORS[i % len(UNCOVER_COLORS)],
             line=dict(width=0),
         ))
+    ct_label = f"C_t total ({model_type.capitalize()})" if model_type else "C_t total (MMM base)"
     fig.add_trace(go.Scatter(
         x=ct_aligned.index, y=ct_aligned.values,
-        name="C_t total (Stan)",
+        name=ct_label,
         mode="lines",
         line=dict(color="#FFFFFF", width=2, dash="dot"),
     ))
@@ -275,10 +279,11 @@ def _print_breakdown_summary(result, dim: str) -> None:
     r2_v = result.r2.get(dim, float("nan"))
     wape_v = result.wape.get(dim, float("nan"))
 
+    anchor_label = f"{result.config.model_type.capitalize()} Anchor"
     print(f"\n{'='*66}")
     print(f"  {dim}  (proxy_ratio={proxy_r:.3f}  CSL_max_dev={csl_d:.3f}  R²={r2_v:.4f}  WAPE={wape_v:.4f})")
     print(f"{'='*66}")
-    print(f"  Stan Anchor     : {total_anchor:>14,.0f}")
+    print(f"  {anchor_label:<16}: {total_anchor:>14,.0f}")
     print(f"  Sum sub-channels: {total_dim:>14,.0f}  (should ≈ anchor)")
     print(f"{'─'*66}")
     print(f"  {'Sub-channel':<30} {'Absolute':>12}  {'% anchor':>9}")
@@ -296,13 +301,14 @@ def _print_breakdown_summary(result, dim: str) -> None:
 # ── Plot 5: Breakdown total (horizontal stacked bar) ──────────────────────────
 
 def plot_breakdown_total(result, dim: str) -> go.Figure:
-    """Horizontal stacked bar: total contribution per sub-channel vs Stan anchor."""
+    """Horizontal stacked bar: total contribution per sub-channel vs base MMM anchor."""
     contribs = result.contribs.get(dim)
     if contribs is None:
         raise ValueError(f"dim '{dim}' not in result.contribs. Available: {list(result.contribs)}")
 
     anchor = align_to(result.media_dd_contrib, contribs.index)
     total_anchor = float(anchor.sum())
+    anchor_label = f"{result.config.model_type.capitalize()} Anchor"
     totals = contribs.sum()
 
     fig = go.Figure()
@@ -327,7 +333,7 @@ def plot_breakdown_total(result, dim: str) -> go.Figure:
         line_color="#FFFFFF",
         line_dash="dot",
         line_width=2,
-        annotation_text="Stan Anchor",
+        annotation_text=anchor_label,
         annotation_font_color="#FFFFFF",
         annotation_position="top right",
     )
