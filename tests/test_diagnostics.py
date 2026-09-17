@@ -44,43 +44,57 @@ def test_run_diagnostics_returns_types():
     assert isinstance(new_cfg, DeepDiveConfig)
 
 
-def test_tiny_vars_bucketed_into_outros():
+def test_tiny_vars_bucketed_into_others():
     cfg, upgrade = _make_fixtures()
     new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
     praca_vars = new_cfg.vars_per_dim.get("Praca", [])
     # rec, go < 2% → should NOT be in kept vars
     assert "$metric:invest$category:praca:rec" not in praca_vars
     assert "$metric:invest$category:praca:go" not in praca_vars
-    # 2+ excluded vars → __outros__ column should be added
-    assert any("__outros__" in v for v in praca_vars)
+    # 2+ excluded vars → __others__ column should be added
+    assert any("__others__" in v for v in praca_vars)
     assert diag.bucketed.get("Praca") == [
         "$metric:invest$category:praca:rec", "$metric:invest$category:praca:go",
     ]
 
 
-def test_outros_inherits_lower_funnel_when_bucket_fully_lower():
+def test_bucketed_raw_has_original_per_member_series():
+    """diag.bucketed_raw exposes the original (pre-aggregation) investment +
+    auxiliary_metric series for each __others__ member, for audit purposes."""
+    cfg, upgrade = _make_fixtures()
+    _, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    df = diag.bucketed_raw["Praca"]
+    assert set(df.columns) == {"date", "variable", "investment", "auxiliary_metric"}
+    assert set(df["variable"]) == {
+        "$metric:invest$category:praca:rec", "$metric:invest$category:praca:go",
+    }
+    # 52 weeks x 2 bucketed members
+    assert len(df) == 104
+
+
+def test_others_inherits_lower_funnel_when_bucket_fully_lower():
     """Both bucketed members (rec, go) are configured lower funnel -> the
-    __outros__ aggregate is unambiguous, inherits lower funnel too."""
+    __others__ aggregate is unambiguous, inherits lower funnel too."""
     cfg, upgrade = _make_fixtures()
     cfg.lower_funnel_vars_per_dim = {
         "Praca": ["$metric:invest$category:praca:rec", "$metric:invest$category:praca:go"],
     }
     new_cfg, _ = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
-    outros_col = next(v for v in new_cfg.vars_per_dim["Praca"] if v.startswith("__outros__"))
-    assert new_cfg.lower_funnel_vars_per_dim["Praca"] == [outros_col]
+    others_col = next(v for v in new_cfg.vars_per_dim["Praca"] if v.startswith("__others__"))
+    assert new_cfg.lower_funnel_vars_per_dim["Praca"] == [others_col]
 
 
-def test_outros_stays_upper_when_bucket_mixed():
+def test_others_stays_upper_when_bucket_mixed():
     """Only one of the two bucketed members (rec) is configured lower funnel
-    -> no unambiguous classification, __outros__ defaults to upper funnel
+    -> no unambiguous classification, __others__ defaults to upper funnel
     (i.e. does NOT get added to lower_funnel_vars_per_dim)."""
     cfg, upgrade = _make_fixtures()
     cfg.lower_funnel_vars_per_dim = {
         "Praca": ["$metric:invest$category:praca:rec"],
     }
     new_cfg, _ = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
-    outros_col = next(v for v in new_cfg.vars_per_dim["Praca"] if v.startswith("__outros__"))
-    assert outros_col not in new_cfg.lower_funnel_vars_per_dim.get("Praca", [])
+    others_col = next(v for v in new_cfg.vars_per_dim["Praca"] if v.startswith("__others__"))
+    assert others_col not in new_cfg.lower_funnel_vars_per_dim.get("Praca", [])
     # rec was bucketed away (no longer a standalone slug) -> stale entry dropped
     assert new_cfg.lower_funnel_vars_per_dim.get("Praca", []) == []
 
@@ -112,9 +126,9 @@ def test_single_excluded_var_not_bucketed():
     )
     new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
     praca_vars = new_cfg.vars_per_dim.get("Praca", [])
-    # a single excluded var isn't a "group" → no __outros__, just dropped
+    # a single excluded var isn't a "group" → no __others__, just dropped
     assert "$metric:invest$category:praca:rec" not in praca_vars
-    assert not any("__outros__" in v for v in praca_vars)
+    assert not any("__others__" in v for v in praca_vars)
     assert "Praca" not in diag.bucketed
 
 
@@ -176,5 +190,5 @@ def test_raises_when_auxiliary_metric_not_set_on_config():
 def test_spend_report_columns():
     cfg, upgrade = _make_fixtures()
     _, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
-    expected_cols = {"dim", "slug", "gate_total", "pct_gate_dim", "semanas_ativas", "hhi", "keep"}
+    expected_cols = {"dim", "slug", "gate_total", "pct_gate_dim", "active_weeks", "hhi", "keep"}
     assert expected_cols.issubset(set(diag.spend_report.columns))

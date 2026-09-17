@@ -174,16 +174,20 @@ def test_run_deep_dive_lower_funnel_vars_per_dim_end_to_end():
     )
 
     slugs = list(spend_df.columns)
+    # No real diagnostics run here -- spend itself stands in as its own
+    # auxiliary metric, same convention as a client with no exposure data.
+    aux_dfs = {"TestDim": spend_df}
+
     config_split = DeepDiveConfig(
         dims=["TestDim"], vars_per_dim={"TestDim": slugs}, media_var="media_total",
         num_steps=200, lower_funnel_vars_per_dim={"TestDim": ["v2"]},
     )
-    result = run_deep_dive(config_split, upgrade, verbose=False)
+    result = run_deep_dive(config_split, upgrade, aux_dfs, verbose=False)
     assert result.models["TestDim"].lower_funnel_variables == ["v2"]
 
     config_default = DeepDiveConfig(
         dims=["TestDim"], vars_per_dim={"TestDim": slugs}, media_var="media_total",
         num_steps=200,
     )
-    result_default = run_deep_dive(config_default, upgrade, verbose=False)
+    result_default = run_deep_dive(config_default, upgrade, aux_dfs, verbose=False)
     assert result_default.models["TestDim"].lower_funnel_variables == []

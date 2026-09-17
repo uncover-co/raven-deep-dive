@@ -22,6 +22,50 @@ class UpgradeResult:
     y_actual: pd.Series | None = None  # observed KPI
 
 
+def _download_export_input_parquets(
+    run_id: str,
+    tracking_uri: str | None,
+    cache_dir: str | None,
+) -> tuple[str, str, "mlflow.tracking.MlflowClient"]:
+    """Download (or reuse cached) export_data.parquet + input_data.parquet for a run.
+
+    cache_dir: if set, parquets are persisted under <cache_dir>/<run_id>/ and
+               reused on subsequent calls. Both files must be present in the
+               cache to count as a hit -- a partial cache (e.g. an interrupted
+               previous download) re-downloads rather than failing later on a
+               missing input_data.parquet.
+
+    Returns (export_path, input_path, client) -- client is also needed by
+    callers for client.get_run(run_id).data.params.
+    """
+    if tracking_uri:
+        mlflow.set_tracking_uri(tracking_uri)
+
+    client = mlflow.tracking.MlflowClient()
+
+    if cache_dir:
+        dst = os.path.join(cache_dir, run_id)
+        os.makedirs(dst, exist_ok=True)
+        export_cached = os.path.join(dst, "export_data.parquet")
+        input_cached = os.path.join(dst, "input_data.parquet")
+        if os.path.exists(export_cached) and os.path.exists(input_cached):
+            print(f"[cache] {dst}")
+            return export_cached, input_cached, client
+        import shutil, tempfile
+        _tmp = tempfile.mkdtemp()
+        export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
+        input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+        shutil.copy(export_path, export_cached)
+        shutil.copy(input_path, input_cached)
+        return export_cached, input_cached, client
+
+    import tempfile
+    _tmp = tempfile.mkdtemp()
+    export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
+    input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+    return export_path, input_path, client
+
+
 def _load_from_parquets(
     run_id: str,
     tracking_uri: str | None = None,
@@ -36,31 +80,9 @@ def _load_from_parquets(
     contribution_metric_type: metric_type row to use for contrib_df.
         Stan: 'Contribution Unadstocked'  Meridian: 'Contribution'
     """
-    if tracking_uri:
-        mlflow.set_tracking_uri(tracking_uri)
-
-    client = mlflow.tracking.MlflowClient()
-
-    if cache_dir:
-        dst = os.path.join(cache_dir, run_id)
-        os.makedirs(dst, exist_ok=True)
-        export_cached = os.path.join(dst, "export_data.parquet")
-        input_cached = os.path.join(dst, "input_data.parquet")
-        if os.path.exists(export_cached):
-            print(f"[cache] {dst}")
-            export_path, input_path = export_cached, input_cached
-        else:
-            import shutil, tempfile
-            _tmp = tempfile.mkdtemp()
-            export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
-            input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
-            shutil.copy(export_path, export_cached)
-            shutil.copy(input_path, input_cached)
-    else:
-        import tempfile
-        _tmp = tempfile.mkdtemp()
-        export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
-        input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+    export_path, input_path, client = _download_export_input_parquets(
+        run_id, tracking_uri, cache_dir
+    )
 
     export = pd.read_parquet(export_path)
 
@@ -153,31 +175,9 @@ def load_raven_upgrade(
     Note: the artifact store backing some Raven runs may require AWS SSO
     (`aws sso login`) rather than the static keys used for Stan/Meridian.
     """
-    if tracking_uri:
-        mlflow.set_tracking_uri(tracking_uri)
-
-    client = mlflow.tracking.MlflowClient()
-
-    if cache_dir:
-        dst = os.path.join(cache_dir, run_id)
-        os.makedirs(dst, exist_ok=True)
-        export_cached = os.path.join(dst, "export_data.parquet")
-        input_cached = os.path.join(dst, "input_data.parquet")
-        if os.path.exists(export_cached) and os.path.exists(input_cached):
-            print(f"[cache] {dst}")
-            export_path, input_path = export_cached, input_cached
-        else:
-            import shutil, tempfile
-            _tmp = tempfile.mkdtemp()
-            export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
-            input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
-            shutil.copy(export_path, export_cached)
-            shutil.copy(input_path, input_cached)
-    else:
-        import tempfile
-        _tmp = tempfile.mkdtemp()
-        export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
-        input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+    export_path, input_path, client = _download_export_input_parquets(
+        run_id, tracking_uri, cache_dir
+    )
 
     export = pd.read_parquet(export_path)
     inp = pd.read_parquet(input_path)

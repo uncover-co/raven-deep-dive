@@ -101,15 +101,15 @@ def plot_weekly(result, dim: str) -> go.Figure:
     ct = align_to(result.media_dd_contrib, contribs.index)
     fig.add_trace(go.Scatter(
         x=ct.index, y=ct.values,
-        name="C_t total (Stan)",
+        name=f"C_t total ({result.config.model_type.capitalize()})",
         mode="lines",
         line=dict(color="#FFFFFF", width=2, dash="dot"),
     ))
 
     fig.update_layout(
-        title=f"Contribs Semanais — {dim}",
-        xaxis_title="Semana",
-        yaxis_title="Contribuição",
+        title=f"Weekly Contributions — {dim}",
+        xaxis_title="Week",
+        yaxis_title="Contribution",
     )
     return _styled(fig)
 
@@ -118,6 +118,7 @@ def plot_weekly_df(
     contribs: pd.DataFrame,
     ct: pd.Series,
     title: str = "",
+    model_type: str | None = None,
 ) -> go.Figure:
     """Stacked area: weekly contributions from an arbitrary contribs DataFrame + C_t overlay.
 
@@ -125,6 +126,8 @@ def plot_weekly_df(
         contribs: DataFrame(datetime index, columns=channel names).
         ct: C_t total series (media_dd_contrib). Aligned to contribs index automatically.
         title: chart title.
+        model_type: base MMM anchoring C_t ("stan", "meridian", "raven"), for the
+            overlay's legend label. Omit when unknown -- labeled "MMM base" then.
     """
     ct_aligned = align_to(ct, contribs.index)
     fig = go.Figure()
@@ -138,16 +141,17 @@ def plot_weekly_df(
             fillcolor=UNCOVER_COLORS[i % len(UNCOVER_COLORS)],
             line=dict(width=0),
         ))
+    ct_label = f"C_t total ({model_type.capitalize()})" if model_type else "C_t total (MMM base)"
     fig.add_trace(go.Scatter(
         x=ct_aligned.index, y=ct_aligned.values,
-        name="C_t total (Stan)",
+        name=ct_label,
         mode="lines",
         line=dict(color="#FFFFFF", width=2, dash="dot"),
     ))
     fig.update_layout(
-        title=title or "Contribs Semanais",
-        xaxis_title="Semana",
-        yaxis_title="Contribuição",
+        title=title or "Weekly Contributions",
+        xaxis_title="Week",
+        yaxis_title="Contribution",
     )
     return _styled(fig)
 
@@ -162,15 +166,15 @@ def plot_saturation_curves(result, dim: str) -> go.Figure:
     if model is None:
         raise ValueError(f"No fitted model for dim '{dim}'. Available: {list(result.models)}")
 
-    variaveis = list(result.contribs[dim].columns)
+    variables = list(result.contribs[dim].columns)
     features_raw = result.features_raw.get(dim)
     col_maxes = result.col_maxes.get(dim)
-    params = extract_hill_params(model, variaveis, features_raw, col_maxes)
+    params = extract_hill_params(model, variables, features_raw, col_maxes)
 
     x_range = np.linspace(0.0, 1.0, 200)
     fig = go.Figure()
 
-    for i, var in enumerate(variaveis):
+    for i, var in enumerate(variables):
         if var not in params.index:
             continue
         row = params.loc[var]
@@ -202,9 +206,9 @@ def plot_saturation_curves(result, dim: str) -> go.Figure:
             ))
 
     fig.update_layout(
-        title=f"Curvas de Saturação Hill — {dim}",
-        xaxis_title="Spend Normalizado [0–1]",
-        yaxis_title="Contribuição",
+        title=f"Hill Saturation Curves — {dim}",
+        xaxis_title="Normalized Spend [0–1]",
+        yaxis_title="Contribution",
     )
     return _styled(fig)
 
@@ -248,7 +252,7 @@ def plot_roas_index(result) -> go.Figure:
     ))
     fig.update_layout(
         title="ROAS Index (contrib_share / spend_share)",
-        xaxis=dict(title="Dimensão"),
+        xaxis=dict(title="Dimension"),
         yaxis=dict(title="Item"),
     )
     return _styled(fig)
@@ -275,13 +279,14 @@ def _print_breakdown_summary(result, dim: str) -> None:
     r2_v = result.r2.get(dim, float("nan"))
     wape_v = result.wape.get(dim, float("nan"))
 
+    anchor_label = f"{result.config.model_type.capitalize()} Anchor"
     print(f"\n{'='*66}")
     print(f"  {dim}  (proxy_ratio={proxy_r:.3f}  CSL_max_dev={csl_d:.3f}  R²={r2_v:.4f}  WAPE={wape_v:.4f})")
     print(f"{'='*66}")
-    print(f"  Âncora Stan     : {total_anchor:>14,.0f}")
-    print(f"  Soma sub-canais : {total_dim:>14,.0f}  (deve ≈ âncora)")
+    print(f"  {anchor_label:<16}: {total_anchor:>14,.0f}")
+    print(f"  Sum sub-channels: {total_dim:>14,.0f}  (should ≈ anchor)")
     print(f"{'─'*66}")
-    print(f"  {'Sub-canal':<30} {'Absoluto':>12}  {'% âncora':>9}")
+    print(f"  {'Sub-channel':<30} {'Absolute':>12}  {'% anchor':>9}")
     print(f"{'─'*66}")
     for col in contribs.columns:
         label = _clean_label(col)
@@ -296,13 +301,14 @@ def _print_breakdown_summary(result, dim: str) -> None:
 # ── Plot 5: Breakdown total (horizontal stacked bar) ──────────────────────────
 
 def plot_breakdown_total(result, dim: str) -> go.Figure:
-    """Horizontal stacked bar: total contribution per sub-channel vs Stan anchor."""
+    """Horizontal stacked bar: total contribution per sub-channel vs base MMM anchor."""
     contribs = result.contribs.get(dim)
     if contribs is None:
         raise ValueError(f"dim '{dim}' not in result.contribs. Available: {list(result.contribs)}")
 
     anchor = align_to(result.media_dd_contrib, contribs.index)
     total_anchor = float(anchor.sum())
+    anchor_label = f"{result.config.model_type.capitalize()} Anchor"
     totals = contribs.sum()
 
     fig = go.Figure()
@@ -318,7 +324,7 @@ def plot_breakdown_total(result, dim: str) -> go.Figure:
             orientation="h",
             marker_color=UNCOVER_COLORS[i % len(UNCOVER_COLORS)],
             base=cumulative,
-            hovertemplate=f"<b>{label}</b><br>Contribuição: %{{x:,.0f}}<br>{pct:.1f}% da âncora<extra></extra>",
+            hovertemplate=f"<b>{label}</b><br>Contribution: %{{x:,.0f}}<br>{pct:.1f}% of anchor<extra></extra>",
         ))
         cumulative += val
 
@@ -327,26 +333,26 @@ def plot_breakdown_total(result, dim: str) -> go.Figure:
         line_color="#FFFFFF",
         line_dash="dot",
         line_width=2,
-        annotation_text="Âncora Stan",
+        annotation_text=anchor_label,
         annotation_font_color="#FFFFFF",
         annotation_position="top right",
     )
     fig.update_layout(
         barmode="stack",
-        title=f"Contribs Total do Período — {dim}",
-        xaxis_title="Contribuição",
+        title=f"Total Contributions Period — {dim}",
+        xaxis_title="Contribution",
         height=280,
     )
     return _styled(fig)
 
 
-# ── analyze_deepdive: relatório por dimensão (single client) ─────────────────
+# ── analyze_deepdive: report per dimension (single client) ────────────────────
 
 def analyze_deepdive(result, title_prefix: str = "") -> dict[str, tuple]:
-    """Relatório por dimensão de quebra: summary + total + semanal.
+    """Report per breakdown dimension: summary + total + weekly.
 
-    Para cada dim em result.config.dims imprime tabela de shares e mostra
-    dois gráficos: barra total do período e área empilhada semanal.
+    For each dim in result.config.dims prints share table and shows
+    two charts: total period bar and stacked weekly area.
 
     Returns {dim: (fig_total, fig_weekly)}.
     """
@@ -357,16 +363,16 @@ def analyze_deepdive(result, title_prefix: str = "") -> dict[str, tuple]:
             continue
         _print_breakdown_summary(result, dim)
         fig_total = plot_breakdown_total(result, dim)
-        fig_total.update_layout(title=f"{prefix}Contribs Total — {dim}")
+        fig_total.update_layout(title=f"{prefix}Total Contributions — {dim}")
         fig_weekly = plot_weekly(result, dim)
-        fig_weekly.update_layout(title=f"{prefix}Contribs Semanais — {dim}")
+        fig_weekly.update_layout(title=f"{prefix}Weekly Contributions — {dim}")
         fig_total.show()
         fig_weekly.show()
         figs[dim] = (fig_total, fig_weekly)
     return figs
 
 
-# ── analyze_batch: relatório multi-cliente por dimensão/rollup ────────────────
+# ── analyze_batch: multi-client report per dimension/rollup ───────────────────
 
 _ROLLUP_LABEL = {
     "grupo":    "Grupo",
@@ -593,7 +599,7 @@ def analyze_batch(
     show: bool = True,
     vehicle_spec_override: dict | None = None,
 ) -> dict[str, go.Figure]:
-    """Relatório multi-cliente por dimensão: tabela + gráfico share/ROAS.
+    """Multi-client report per dimension: table + share/ROAS chart.
 
     Args:
         all_results: dict[client_name, DDResult].
@@ -882,7 +888,7 @@ def plot_tree_dim(
         **{k: v for k, v in _LAYOUT_DEFAULTS.items()
            if k not in ("height", "width", "legend", "xaxis", "yaxis", "margin")},
         title=dict(
-            text=f"<b>{dim}</b> — Árvore de Contribuições  (tamanho = share modelo · cor = ROAS Index)",
+            text=f"<b>{dim}</b> — Contribution Tree  (size = share model · color = ROAS Index)",
             font=dict(size=14, color="#E0E0E0"),
         ),
         height=560,
@@ -952,8 +958,8 @@ def analyze_trees(
             if multi_vehicle:
                 fig.update_layout(
                     title_text=(
-                        f"<b>[{veh}] {dim}</b> — Árvore de Contribuições"
-                        "  (tamanho = share modelo · cor = ROAS Index)"
+                        f"<b>[{veh}] {dim}</b> — Contribution Tree"
+                        "  (size = share model · color = ROAS Index)"
                     )
                 )
 

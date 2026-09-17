@@ -33,7 +33,7 @@ dependencies = [
     "ipykernel>=6.0.0",
     "nbformat>=5.9.0",
     # Uncover internal packages (acesso interno necessário)
-    "mmmverse @ git+ssh://git@github.com/uncover-co/mmmverse.git",
+    "mmmverse @ git+ssh://git@github.com/uncover-co/mmmverse.git@v1.5.0",
     "uncoverwebserversdk @ git+ssh://git@github.com/uncover-co/pytoolkit-webserver-sdk.git",
     "uncover-deploy @ git+ssh://git@github.com/uncover-co/uncoverpy-deploy.git",
     "autommm @ git+ssh://git@github.com/uncover-co/autommm_mle.git",
@@ -46,16 +46,16 @@ test = [
     "pytest-mock>=3.10.0",
 ]
 
-[project.scripts]
-raven-deep-dive = "raven_deep_dive:main"
-
 [build-system]
 requires = ["uv_build>=0.8.24,<0.9.0"]
 build-backend = "uv_build"
 
 [tool.uv]
 # mmmverse pins mammoth@main, autommm pins mammoth@v0.4.0 — force a single ref
-# for the whole resolution to break the conflict.
+# for the whole resolution to break the conflict. autommm also pulls in
+# mmmverse@main transitively, conflicting with our own direct pin on
+# mmmverse@v1.5.0 above — force that too.
 override-dependencies = [
     "mammoth @ git+ssh://git@github.com/uncover-co/mammoth.git@v0.4.0",
+    "mmmverse @ git+ssh://git@github.com/uncover-co/mmmverse.git@v1.5.0",
 ]

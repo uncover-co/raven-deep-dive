@@ -1,7 +1,7 @@
 import pandas as pd
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
-from config import DeepDiveConfig, build_config
+from config import DeepDiveConfig, build_config, load_yaml
 from extraction import UpgradeResult
 
 
@@ -38,3 +38,26 @@ def test_deepdivedconfig_defaults():
     )
     assert cfg.share_prior_scale == 0.05
     assert cfg.num_steps == 30_000
+
+
+def test_load_yaml_resolves_instance_params_tags_to_real_objects(tmp_path):
+    """load_yaml() must deserialize !instance/!params into a real Python
+    object, not a string or a plain dict -- this is what makes
+    upper_funnel_adstock_effect_per_dim work at all (build_config -> Raven).
+    A regression in the from_yaml wiring would otherwise leave the suite
+    green while client YAMLs with this tag fail at startup."""
+    from prophetverse.effects import WeibullAdstockEffect
+
+    yaml_path = tmp_path / "adstock.yaml"
+    yaml_path.write_text(
+        "upper_funnel_adstock_effect_per_dim:\n"
+        "  ProductDim:\n"
+        "    'slug_a':\n"
+        "      '!instance': prophetverse.effects.adstock.WeibullAdstockEffect\n"
+        "      '!params':\n"
+        "        max_lag: 7\n"
+    )
+    parsed = load_yaml(str(yaml_path))
+    effect = parsed["upper_funnel_adstock_effect_per_dim"]["ProductDim"]["slug_a"]
+    assert isinstance(effect, WeibullAdstockEffect)
+    assert effect.max_lag == 7

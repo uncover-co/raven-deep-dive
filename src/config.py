@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
-import yaml
+from mmmverse.spec.yaml import from_yaml
 
 
 @dataclass
@@ -28,17 +28,19 @@ class DeepDiveConfig:
     # {dim_name: [slug, ...]} fit WITHOUT adstock; rest of the dim keeps adstock.
     # Vehicle-agnostic: pipeline only sees slugs, no funnel/branding concept baked in.
     lower_funnel_vars_per_dim: dict[str, list[str]] = field(default_factory=dict)
+    # {dim_name: BaseEffect | {slug: BaseEffect}} custom adstock for upper-funnel
+    # vars in that dim (single effect for all, or one per slug -- mmmverse
+    # requires every upper-funnel slug present when it's a dict). Missing dim
+    # entry = library default for that whole dim.
+    upper_funnel_adstock_effect_per_dim: dict[str, Any] = field(default_factory=dict)
 
 
-if "!class" not in yaml.SafeLoader.yaml_constructors:
-    yaml.SafeLoader.add_constructor(
-        "!class", lambda loader, node: loader.construct_scalar(node)
-    )
-
-
-def _load_yaml(path: str) -> dict:
+def load_yaml(path: str) -> dict:
+    """Load a YAML file. Uses mmmverse's spec loader, so !instance/!params
+    mappings deserialize into real Python objects (e.g. a custom adstock
+    effect) -- same mechanism production model_specs use."""
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+        return from_yaml(f.read()) or {}
 
 
 def _get_template(vehicle_spec: dict, breakdown_spec: dict) -> str:
@@ -94,16 +96,20 @@ def resolve_share_likelihood_metric(metrics: list[str], override: str | None) ->
 
 
 def _build_vars_per_dim(
-    vehicle_spec: dict, cfg: dict, dims: list[str] | None
+    vehicle_spec: dict, cfg: dict, dims: list[str] | None, metrics: list[str]
 ) -> dict[str, list[str]]:
     """Build {dimension_name: [slug, ...]} mapping from vehicle spec.
 
     Any scalar field in the client `cfg` (brand, nameplate, etc.) is available to
     templates as a placeholder — new per-vehicle template variables need no code change.
+
+    metrics: fetched metrics (vehicle's primary + client's auxiliary_metric), from
+    _resolve_metrics(). Passed in rather than recomputed here so build_config()'s
+    single call stays the one source of truth -- see its own call to
+    resolve_share_likelihood_metric() for the other consumer of the same list.
     """
     vehicle_slug = vehicle_spec.get("vehicle_slug", "eletromidia")
     brand = cfg.get("brand", "")
-    metrics = _resolve_metrics(vehicle_spec, cfg.get("auxiliary_metric", ""))
 
     all_breakdowns = vehicle_spec.get("breakdowns", {})
     # Default: model_dims from vehicle_spec (avoids Estado/Vertical/Tipo being modeled separately).
@@ -148,15 +154,21 @@ def build_config(
     upgrade: Any,
     specs_path: str,
     media_var_override: str | None = None,
+    specs: dict | None = None,
 ) -> DeepDiveConfig:
     """Build DeepDiveConfig from client YAML + UpgradeResult.
 
     Args:
         upgrade: UpgradeResult with contrib_df (used to validate media_var).
         specs_path: path to the client YAML (e.g. deepdive/configs/bradesco_eletro.yaml).
+            Still required even when `specs` is given -- used to resolve
+            `vehicle_specs_path` relative to the client YAML's own location.
         media_var_override: explicit aggregate channel column name; overrides YAML value.
+        specs: pre-parsed client YAML (via load_yaml), to skip re-parsing when
+            the caller already loaded it (e.g. to read a few fields before
+            calling build_config -- see batch.py's run_single_client).
     """
-    cfg = _load_yaml(specs_path)
+    cfg = specs if specs is not None else load_yaml(specs_path)
     brand = cfg.get("brand", "")
     dims_override = cfg.get("dimensions", None)
 
@@ -169,7 +181,7 @@ def build_config(
             f"vehicle_specs not found: {vehicle_specs_path}\n"
             f"Check 'vehicle_specs_path' in {specs_path}."
         )
-    vehicle_specs = _load_yaml(vehicle_specs_path)
+    vehicle_specs = load_yaml(vehicle_specs_path)
     vehicle_key = cfg.get("vehicle", "eletromidia")
     available_vehicles = list(vehicle_specs.get("vehicles", {}).keys())
     if vehicle_key not in vehicle_specs.get("vehicles", {}):
@@ -188,11 +200,12 @@ def build_config(
             "as the investment metric when the vehicle has no exposure metric."
         )
 
-    vars_per_dim = _build_vars_per_dim(vehicle_spec, cfg, dims_override)
+    metrics = _resolve_metrics(vehicle_spec, auxiliary_metric)
+    vars_per_dim = _build_vars_per_dim(vehicle_spec, cfg, dims_override, metrics)
     dims = list(vars_per_dim.keys())
 
     share_likelihood_metric = resolve_share_likelihood_metric(
-        _resolve_metrics(vehicle_spec, auxiliary_metric), cfg.get("share_likelihood_metric")
+        metrics, cfg.get("share_likelihood_metric")
     )
 
     media_var = media_var_override or cfg.get("media_var")
@@ -222,4 +235,5 @@ def build_config(
         min_active_weeks_frac=cfg.get("min_active_weeks_frac", 0.05),
         vehicle_spec=vehicle_spec,
         lower_funnel_vars_per_dim=cfg.get("lower_funnel_vars_per_dim") or {},
+        upper_funnel_adstock_effect_per_dim=cfg.get("upper_funnel_adstock_effect_per_dim") or {},
     )
