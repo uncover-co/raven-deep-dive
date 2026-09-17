@@ -193,7 +193,9 @@ def _run_raven_dim(
     _proxy_ratio = contribs.sum(axis=1).sum() / (_ct.sum() + 1e-12)
     _sh_mod = contribs.sum() / (contribs.sum().sum() + 1e-12)
     _sh_spend = features_raw[variables].sum() / (features_raw[variables].sum().sum() + 1e-12)
-    _csl_max_dev = (_sh_mod - _sh_spend).abs().max()
+    _csl_totals = _csl_metric_df.sum(axis=0)
+    _sh_csl_metric = _csl_totals / (_csl_totals.sum() + 1e-12)
+    _csl_max_dev = (_sh_mod - _sh_csl_metric).abs().max()
 
     _ct_hat = contribs.sum(axis=1)
     _ct_vals = _ct.reindex(_ct_hat.index).fillna(0)
