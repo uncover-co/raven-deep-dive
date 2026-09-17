@@ -259,6 +259,17 @@ def run_deep_dive(
         if dim not in auxiliary_metric_dfs:
             raise ValueError(f"[{dim}] auxiliary_metric_dfs has no entry for this dim.")
         _aux = auxiliary_metric_dfs[dim]
+        # ContributionShareLikelihood reads metric_df.values positionally, so
+        # column order must match `available` exactly, not just column names.
+        # Extra columns in _aux beyond `available` are silently dropped by the
+        # select below; only a missing required column is an error.
+        try:
+            _aux = _aux[available]
+        except KeyError as e:
+            raise ValueError(
+                f"[{dim}] auxiliary_metric_dfs is missing column(s) required by "
+                f"config.vars_per_dim[dim] after diagnostics ({available}): {e}"
+            ) from e
         _configured_lower = config.lower_funnel_vars_per_dim.get(dim, [])
         _lower_vars = [v for v in _configured_lower if v in available]
         _dropped_lower = [v for v in _configured_lower if v not in available]

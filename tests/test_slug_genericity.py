@@ -263,7 +263,7 @@ def test_breakdown_missing_category_raises():
         "breakdowns": {"Bad": {"values": ["a"]}},  # no "category"
     }
     with pytest.raises(ValueError, match="category"):
-        _build_vars_per_dim(vehicle_spec, {}, None)
+        _build_vars_per_dim(vehicle_spec, {}, None, ["spend"])
 
 
 def test_breakdown_missing_values_raises():
@@ -274,4 +274,4 @@ def test_breakdown_missing_values_raises():
         "breakdowns": {"Bad": {"category": "bad"}},  # no "values"
     }
     with pytest.raises(ValueError, match="values"):
-        _build_vars_per_dim(vehicle_spec, {}, None)
+        _build_vars_per_dim(vehicle_spec, {}, None, ["spend"])

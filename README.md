@@ -154,7 +154,7 @@ registry = load_registry("configs/clients_registry.yaml")
 all_results, diagnostics, errors = run_deep_dive_batch(
     registry, registry_path="configs/clients_registry.yaml", output_base_dir="outputs"
 )
-df_meta    = consolidate_results(all_results, vehicle_spec_override=vehicle_spec)
+df_meta    = consolidate_results(all_results)  # usa result.config.vehicle_spec de cada cliente
 batch_figs = analyze_batch(all_results, df_meta)
 ```
 

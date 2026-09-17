@@ -16,9 +16,8 @@ from datetime import datetime
 from typing import Any
 
 import pandas as pd
-import yaml
 
-from config import DeepDiveConfig, build_config
+from config import DeepDiveConfig, build_config, load_yaml
 from diagnostics import run_diagnostics
 from extraction import UpgradeResult, load_upgrade_auto, load_breakdown_spend
 from pipeline import DDResult, run_deep_dive
@@ -31,9 +30,7 @@ DEFAULT_MLFLOW_URI = "https://mlflow-datascience.cloud.uncover.co"
 
 def load_registry(registry_path: str) -> dict[str, dict]:
     """Load clients_registry.yaml. Returns {client_name: cfg_dict}."""
-    with open(registry_path, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
-    return raw.get("clients", {})
+    return load_yaml(registry_path).get("clients", {})
 
 
 def _resolve_specs_path(specs_path: str, registry_path: str) -> str:
@@ -56,9 +53,9 @@ def run_single_client(
     Returns (result, diag, error_message). error_message is None on success.
     """
     specs_path = _resolve_specs_path(client_cfg["specs_path"], registry_path)
-
-    with open(specs_path, "r", encoding="utf-8") as f:
-        specs = yaml.safe_load(f) or {}
+    # Same loader build_config() uses below, so client YAMLs with !instance/!params
+    # (e.g. upper_funnel_adstock_effect_per_dim) parse here too, not just there.
+    specs = load_yaml(specs_path)
 
     tracking_uri = specs.get("mlflow_tracking_uri", DEFAULT_MLFLOW_URI)
     run_id       = specs.get("upgrade_run_id")
@@ -84,7 +81,7 @@ def run_single_client(
         print(f"{'='*66}")
 
         upgrade = load_upgrade_auto(run_id, model_type=model_type, tracking_uri=tracking_uri)
-        config  = build_config(upgrade, specs_path)
+        config  = build_config(upgrade, specs_path, specs=specs)
 
         all_vars = [v for slugs in config.vars_per_dim.values() for v in slugs]
         print(f"  Loading breakdown spend ({len(all_vars)} vars)...")
@@ -489,8 +486,8 @@ def consolidate_results(
         all_results: output of run_deep_dive_batch().
         vehicle_spec_override: pass the full vehicle spec dict if all_results was produced
             by an older batch run where config.vehicle_spec was empty.  Example:
-                from config import _load_yaml
-                vs = _load_yaml("../data/vehicle_specs.yaml")["vehicles"]["eletromidia"]
+                from config import load_yaml
+                vs = load_yaml("../data/vehicle_specs.yaml")["vehicles"]["eletromidia"]
                 df_meta = consolidate_results(all_results, vehicle_spec_override=vs)
 
     Returns long-form DataFrame with columns:
