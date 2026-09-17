@@ -16,17 +16,14 @@ def _fake_upgrade_for_config(cols):
 
 
 def test_build_config_returns_dataclass():
-    specs_path = os.path.join(os.path.dirname(__file__), "../configs/bradesco_eletro.yaml")
-    ur = _fake_upgrade_for_config(["investments:eletromidia:transacoes-cc:state:sao-paulo"])
-    cfg = build_config(
-        ur,
-        specs_path=specs_path,
-        media_var_override="investments:eletromidia:transacoes-cc:state:sao-paulo",
-    )
+    specs_path = os.path.join(os.path.dirname(__file__), "../configs/stellantis_fastback.yaml")
+    media_var = "$metric:investments$_connection:c8f08420-058c-49d5-8149-01b097f977ac$nameplate:institucional,fastback"
+    ur = _fake_upgrade_for_config([media_var])
+    cfg = build_config(ur, specs_path=specs_path)
     assert isinstance(cfg, DeepDiveConfig)
     assert len(cfg.dims) > 0
     assert all(d in cfg.vars_per_dim for d in cfg.dims)
-    assert cfg.brand == "bradesco"
+    assert cfg.brand == "stellantis"
     assert cfg.share_prior_scale == 0.05
 
 
