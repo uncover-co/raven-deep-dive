@@ -22,6 +22,50 @@ class UpgradeResult:
     y_actual: pd.Series | None = None  # observed KPI
 
 
+def _download_export_input_parquets(
+    run_id: str,
+    tracking_uri: str | None,
+    cache_dir: str | None,
+) -> tuple[str, str, "mlflow.tracking.MlflowClient"]:
+    """Download (or reuse cached) export_data.parquet + input_data.parquet for a run.
+
+    cache_dir: if set, parquets are persisted under <cache_dir>/<run_id>/ and
+               reused on subsequent calls. Both files must be present in the
+               cache to count as a hit -- a partial cache (e.g. an interrupted
+               previous download) re-downloads rather than failing later on a
+               missing input_data.parquet.
+
+    Returns (export_path, input_path, client) -- client is also needed by
+    callers for client.get_run(run_id).data.params.
+    """
+    if tracking_uri:
+        mlflow.set_tracking_uri(tracking_uri)
+
+    client = mlflow.tracking.MlflowClient()
+
+    if cache_dir:
+        dst = os.path.join(cache_dir, run_id)
+        os.makedirs(dst, exist_ok=True)
+        export_cached = os.path.join(dst, "export_data.parquet")
+        input_cached = os.path.join(dst, "input_data.parquet")
+        if os.path.exists(export_cached) and os.path.exists(input_cached):
+            print(f"[cache] {dst}")
+            return export_cached, input_cached, client
+        import shutil, tempfile
+        _tmp = tempfile.mkdtemp()
+        export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
+        input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+        shutil.copy(export_path, export_cached)
+        shutil.copy(input_path, input_cached)
+        return export_cached, input_cached, client
+
+    import tempfile
+    _tmp = tempfile.mkdtemp()
+    export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
+    input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+    return export_path, input_path, client
+
+
 def _load_from_parquets(
     run_id: str,
     tracking_uri: str | None = None,
@@ -36,31 +80,9 @@ def _load_from_parquets(
     contribution_metric_type: metric_type row to use for contrib_df.
         Stan: 'Contribution Unadstocked'  Meridian: 'Contribution'
     """
-    if tracking_uri:
-        mlflow.set_tracking_uri(tracking_uri)
-
-    client = mlflow.tracking.MlflowClient()
-
-    if cache_dir:
-        dst = os.path.join(cache_dir, run_id)
-        os.makedirs(dst, exist_ok=True)
-        export_cached = os.path.join(dst, "export_data.parquet")
-        input_cached = os.path.join(dst, "input_data.parquet")
-        if os.path.exists(export_cached):
-            print(f"[cache] {dst}")
-            export_path, input_path = export_cached, input_cached
-        else:
-            import shutil, tempfile
-            _tmp = tempfile.mkdtemp()
-            export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
-            input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
-            shutil.copy(export_path, export_cached)
-            shutil.copy(input_path, input_cached)
-    else:
-        import tempfile
-        _tmp = tempfile.mkdtemp()
-        export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
-        input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+    export_path, input_path, client = _download_export_input_parquets(
+        run_id, tracking_uri, cache_dir
+    )
 
     export = pd.read_parquet(export_path)
 
@@ -153,31 +175,9 @@ def load_raven_upgrade(
     Note: the artifact store backing some Raven runs may require AWS SSO
     (`aws sso login`) rather than the static keys used for Stan/Meridian.
     """
-    if tracking_uri:
-        mlflow.set_tracking_uri(tracking_uri)
-
-    client = mlflow.tracking.MlflowClient()
-
-    if cache_dir:
-        dst = os.path.join(cache_dir, run_id)
-        os.makedirs(dst, exist_ok=True)
-        export_cached = os.path.join(dst, "export_data.parquet")
-        input_cached = os.path.join(dst, "input_data.parquet")
-        if os.path.exists(export_cached) and os.path.exists(input_cached):
-            print(f"[cache] {dst}")
-            export_path, input_path = export_cached, input_cached
-        else:
-            import shutil, tempfile
-            _tmp = tempfile.mkdtemp()
-            export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
-            input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
-            shutil.copy(export_path, export_cached)
-            shutil.copy(input_path, input_cached)
-    else:
-        import tempfile
-        _tmp = tempfile.mkdtemp()
-        export_path = client.download_artifacts(run_id, "export_data.parquet", _tmp)
-        input_path = client.download_artifacts(run_id, "input_data.parquet", _tmp)
+    export_path, input_path, client = _download_export_input_parquets(
+        run_id, tracking_uri, cache_dir
+    )
 
     export = pd.read_parquet(export_path)
     inp = pd.read_parquet(input_path)
@@ -277,34 +277,38 @@ def load_breakdown_spend(
     end_date: datetime,
     time_interval: str = "week",
     timezone: str = "America/Sao_Paulo",
-    output_path: str = "/tmp/dd_spend.parquet",
+    data_version: str | None = None,
 ) -> pd.DataFrame:
     """Load breakdown-level spend data for all Deep Dive variables.
 
-    Wraps preprocessing_dd from the mammoth BuildDefaultDataset pipeline.
-    Returns DataFrame with timestamp index and one column per variable.
-    """
-    from uncover.deploy.pipelines.preprocessing import BuildDefaultDataset
+    Wraps ducks' build_modelling_dataset (the maintained replacement for the
+    legacy mammoth BuildDefaultDataset). Returns DataFrame with timestamp
+    index and one column per variable that has real data -- an all-zero
+    column (no signal at all) is dropped, same as the pre-ducks behavior.
 
-    ds = BuildDefaultDataset(
-        workspace=workspace,
-        filters=all_vars,
-        time_interval=time_interval,
-        timezone=timezone,
+    data_version pins the read to a completed workspace snapshot (see
+    ducks' data-version docs); omit for the latest live data.
+    """
+    import ducks
+
+    ws = ducks.workspace(workspace)
+    df = ws.build_modelling_dataset(
+        all_vars,
         start_date=start_date,
         end_date=end_date,
+        time_interval=time_interval,
+        timezone=timezone,
+        # zero_fill="media" matches metric names by substring
+        # ("$metric:investments"/"$metric:impressions"); our real slugs (e.g.
+        # "$metric:w:investments---tiktok-mmm$...") don't match it, so fill
+        # every column instead -- matches the pre-ducks behavior regardless
+        # of naming.
+        zero_fill=True,
+        data_version=data_version,
     )
-    ds.data = ds.data.fillna(0)
-    ds.zero_fill_investments()
-    zero_cols = [c for c in ds.data.columns if (ds.data[c] == 0).all()]
+    zero_cols = [c for c in df.columns if (df[c] == 0).all()]
     if zero_cols:
         print(f"Dropping {len(zero_cols)} all-zero columns: {zero_cols}")
-        ds.data = ds.data.drop(columns=zero_cols)
-    ds.validate_output_dataset()
-    ds.save_modelling_inputs(output_path=output_path)
-
-    df = pd.read_parquet(output_path).fillna(0)
-    if "timestamp" in df.columns:
-        df = df.set_index(pd.to_datetime(df["timestamp"])).drop(columns=["timestamp"])
-    df.index = pd.to_datetime(df.index).tz_localize(None).normalize()
+        df = df.drop(columns=zero_cols)
+    df.index = df.index.normalize()
     return df

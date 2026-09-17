@@ -41,6 +41,7 @@ def _write_specs(tmp_path, vehicle_key: str, vehicle_spec: dict) -> str:
 
 
 def _write_client(tmp_path, filename="client.yaml", **fields) -> str:
+    fields.setdefault("auxiliary_metric", "spend")  # required by build_config()
     path = tmp_path / filename
     path.write_text(yaml.dump(fields))
     return str(path)
@@ -67,6 +68,22 @@ def test_basic_single_metric_single_template(tmp_path):
         "$metric:spend$category:brand:acme$category:region:south",
         "$metric:spend$category:brand:acme$category:region:east",
     ]
+
+
+def test_build_config_raises_when_auxiliary_metric_missing(tmp_path):
+    vehicle_spec = {
+        "vehicle_slug": "fake",
+        "default_metric": "spend",
+        "models": {"default_template": "$metric:{metric}$category:{category}:{value}"},
+        "breakdowns": {"Region": {"category": "region", "values": ["north"]}},
+    }
+    specs_path = _write_specs(tmp_path, "fake_no_aux", vehicle_spec)
+    client_path = _write_client(
+        tmp_path, vehicle="fake_no_aux", vehicle_specs_path=os.path.basename(specs_path),
+        model_type="stan", media_var="total", auxiliary_metric=None,
+    )
+    with pytest.raises(ValueError, match="auxiliary_metric"):
+        build_config(_FakeUpgrade(), client_path)
 
 
 # ── Case B: default_metric + client's auxiliary_metric cross product ────────
@@ -246,7 +263,7 @@ def test_breakdown_missing_category_raises():
         "breakdowns": {"Bad": {"values": ["a"]}},  # no "category"
     }
     with pytest.raises(ValueError, match="category"):
-        _build_vars_per_dim(vehicle_spec, {}, None)
+        _build_vars_per_dim(vehicle_spec, {}, None, ["spend"])
 
 
 def test_breakdown_missing_values_raises():
@@ -257,4 +274,4 @@ def test_breakdown_missing_values_raises():
         "breakdowns": {"Bad": {"category": "bad"}},  # no "values"
     }
     with pytest.raises(ValueError, match="values"):
-        _build_vars_per_dim(vehicle_spec, {}, None)
+        _build_vars_per_dim(vehicle_spec, {}, None, ["spend"])

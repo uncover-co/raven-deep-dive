@@ -4,7 +4,6 @@ from typing import Any
 from urllib.parse import quote
 import warnings
 import jax
-import numpy as np
 import pandas as pd
 
 from contrib_share_likelihood import ContributionShareLikelihood
@@ -30,6 +29,7 @@ class DDResult:
     config: DeepDiveConfig
     features_raw: dict[str, pd.DataFrame] = field(default_factory=dict)
     col_maxes: dict[str, pd.Series] = field(default_factory=dict)
+    auxiliary_metric_raw: dict[str, pd.DataFrame] = field(default_factory=dict)
     upgrade_run_id: str = ""
 
 
@@ -47,20 +47,6 @@ def align_to(src: pd.Series, target_idx) -> pd.Series:
     return s
 
 
-def _apply_adstock_df(df: pd.DataFrame, decay: float) -> pd.DataFrame:
-    result = df.copy()
-    for col in df.columns:
-        s = df[col].values.astype(float)
-        adst = np.zeros(len(s))
-        for t in range(len(s)):
-            adst[t] = decay * adst[t - 1] + (1 - decay) * s[t] if t > 0 else s[t]
-        mx_orig, mx_adst = s.max(), adst.max()
-        if mx_adst > 0:
-            adst = adst * mx_orig / mx_adst
-        result[col] = adst
-    return result
-
-
 def _run_raven_dim(
     dim_name: str,
     features_df: pd.DataFrame,
@@ -69,9 +55,9 @@ def _run_raven_dim(
     proxy_ct_tolerance: float = 0.15,
     num_steps: int = 30_000,
     use_piecewise_trend: bool = True,
-    adstock_decay: float | None = None,
     auxiliary_metric_df: pd.DataFrame | None = None,
     lower_funnel_variables: list[str] | None = None,
+    upper_funnel_adstock_effect: Any | None = None,
     verbose: bool = True,
 ) -> dict:
     """Fit Raven Hill model for one dimension.
@@ -100,18 +86,29 @@ def _run_raven_dim(
               f"{media_dd_contrib.index[-1].date()} "
               f"({len(media_dd_contrib)}w, {n_dropped} dropped, {_nz} internal zeros)")
 
-    variaveis = list(features_df.columns)
+    variables = list(features_df.columns)
     y2 = media_dd_contrib.to_frame(name="channel")
 
-    _lower_vars = [v for v in (lower_funnel_variables or []) if v in variaveis]
-    _upper_vars = [v for v in variaveis if v not in _lower_vars]
+    _lower_vars = [v for v in (lower_funnel_variables or []) if v in variables]
+    _upper_vars = [v for v in variables if v not in _lower_vars]
+
+    if isinstance(upper_funnel_adstock_effect, dict):
+        configured = set(upper_funnel_adstock_effect)
+        missing, extra = set(_upper_vars) - configured, configured - set(_upper_vars)
+        if missing or extra:
+            raise ValueError(
+                f"[{dim_name}] upper_funnel_adstock_effect_per_dim doesn't match "
+                f"this dimension's current upper-funnel variables (diagnostics can "
+                f"drop low-spend slugs or bucket them into an __others__ column "
+                f"after this was configured -- check diag.bucketed). "
+                f"Missing key(s): {sorted(missing)}. Stale key(s): {sorted(extra)}. "
+                f"Current upper-funnel variables: {sorted(_upper_vars)}."
+            )
 
     features_raw = features_df.reindex(media_dd_contrib.index, fill_value=0)
-    if adstock_decay is not None and adstock_decay > 0 and _upper_vars:
-        features_raw[_upper_vars] = _apply_adstock_df(features_raw[_upper_vars], adstock_decay)
 
-    col_maxes = features_raw[variaveis].max(axis=0).replace(0, 1.0)
-    features_norm = features_raw[variaveis].div(col_maxes)
+    col_maxes = features_raw[variables].max(axis=0).replace(0, 1.0)
+    features_norm = features_raw[variables].div(col_maxes)
 
     _y2_max = float(y2.values.max())
     _proxy_col = f"anchor_{dim_name.replace(' ', '_')}"
@@ -138,15 +135,19 @@ def _run_raven_dim(
         auxiliary_metric_df = auxiliary_metric_df.copy()
         auxiliary_metric_df.index = wmon_norm(auxiliary_metric_df.index)
 
+    # Metric actually fed to the CSL prior -- kept as-is (not just recomputed
+    # from auxiliary_metric_df) so callers can export exactly what the model saw.
+    _csl_metric_df = (
+        auxiliary_metric_df.reindex(y2.index).fillna(0)
+        if auxiliary_metric_df is not None
+        else features_raw[variables]
+    )
+
     _csl = ContributionShareLikelihood(
         target_effect_names=[
-            f"latent/contribution/media/{quote(v, safe='')}" for v in variaveis
+            f"latent/contribution/media/{quote(v, safe='')}" for v in variables
         ],
-        metric_df=(
-            auxiliary_metric_df.reindex(y2.index).fillna(0)
-            if auxiliary_metric_df is not None
-            else features_raw[variaveis]
-        ),
+        metric_df=_csl_metric_df,
         scale=share_prior_scale,
         name=dim_name.replace(" ", "_"),
     )
@@ -156,7 +157,8 @@ def _run_raven_dim(
     raven2 = Raven(
         upper_funnel_variables=_upper_vars,
         lower_funnel_variables=_lower_vars,
-        proxy_variable_mapping={_proxy_col: variaveis},
+        upper_funnel_adstock_effect=upper_funnel_adstock_effect,
+        proxy_variable_mapping={_proxy_col: variables},
         proxy_type={_proxy_col: "exact"},
         proxy_likelihood_scale=_proxy_scale,
         expected_roi=None,
@@ -184,14 +186,16 @@ def _run_raven_dim(
     _comps = raven2.predict_components(fh=y2.index, X=X2)
 
     contribs = pd.DataFrame(
-        {v: _comps[f"latent/contribution/media/{v}"] for v in variaveis},
+        {v: _comps[f"latent/contribution/media/{v}"] for v in variables},
         index=y2.index,
     )
 
     _proxy_ratio = contribs.sum(axis=1).sum() / (_ct.sum() + 1e-12)
     _sh_mod = contribs.sum() / (contribs.sum().sum() + 1e-12)
-    _sh_spend = features_raw[variaveis].sum() / (features_raw[variaveis].sum().sum() + 1e-12)
-    _csl_max_dev = (_sh_mod - _sh_spend).abs().max()
+    _sh_spend = features_raw[variables].sum() / (features_raw[variables].sum().sum() + 1e-12)
+    _csl_totals = _csl_metric_df.sum(axis=0)
+    _sh_csl_metric = _csl_totals / (_csl_totals.sum() + 1e-12)
+    _csl_max_dev = (_sh_mod - _sh_csl_metric).abs().max()
 
     _ct_hat = contribs.sum(axis=1)
     _ct_vals = _ct.reindex(_ct_hat.index).fillna(0)
@@ -219,20 +223,25 @@ def _run_raven_dim(
         "shares_spend": _sh_spend,
         "y2": y2,
         "X2": X2,
-        "variaveis": variaveis,
+        "variables": variables,
         "features_raw": features_raw,
         "col_maxes": col_maxes,
+        "auxiliary_metric_raw": _csl_metric_df,
     }
 
 
 def run_deep_dive(
     config: DeepDiveConfig,
     upgrade: UpgradeResult,
-    auxiliary_metric_dfs: dict[str, pd.DataFrame] | None = None,
+    auxiliary_metric_dfs: dict[str, pd.DataFrame],
     verbose: bool = True,
     upgrade_run_id: str = "",
 ) -> DDResult:
-    """Run deep dive per dimension; collect into DDResult."""
+    """Run deep dive per dimension; collect into DDResult.
+
+    auxiliary_metric_dfs: pass diag.auxiliary_metric_dfs from run_diagnostics().
+    Required, not optional -- every dim needs its share-likelihood proxy.
+    """
     if config.media_var not in upgrade.contrib_df.columns:
         available = list(upgrade.contrib_df.columns)[:10]
         raise KeyError(
@@ -243,6 +252,7 @@ def run_deep_dive(
 
     models, contribs, shares_model, shares_spend = {}, {}, {}, {}
     proxy_ratios, csl_devs, r2s, wapes, features_raw_all, col_maxes_all = {}, {}, {}, {}, {}, {}
+    auxiliary_metric_raw_all = {}
 
     for dim in config.dims:
         slugs = config.vars_per_dim.get(dim, [])
@@ -255,7 +265,20 @@ def run_deep_dive(
             continue
 
         print(f"▶ [{dim}]  ({len(available)} vars)")
-        _aux = (auxiliary_metric_dfs or {}).get(dim)
+        if dim not in auxiliary_metric_dfs:
+            raise ValueError(f"[{dim}] auxiliary_metric_dfs has no entry for this dim.")
+        _aux = auxiliary_metric_dfs[dim]
+        # ContributionShareLikelihood reads metric_df.values positionally, so
+        # column order must match `available` exactly, not just column names.
+        # Extra columns in _aux beyond `available` are silently dropped by the
+        # select below; only a missing required column is an error.
+        try:
+            _aux = _aux[available]
+        except KeyError as e:
+            raise ValueError(
+                f"[{dim}] auxiliary_metric_dfs is missing column(s) required by "
+                f"config.vars_per_dim[dim] after diagnostics ({available}): {e}"
+            ) from e
         _configured_lower = config.lower_funnel_vars_per_dim.get(dim, [])
         _lower_vars = [v for v in _configured_lower if v in available]
         _dropped_lower = [v for v in _configured_lower if v not in available]
@@ -263,7 +286,7 @@ def run_deep_dive(
             print(
                 f"  [WARNING] [{dim}] {len(_dropped_lower)} lower_funnel_vars_per_dim entr"
                 f"{'y' if len(_dropped_lower) == 1 else 'ies'} not in available vars (likely "
-                f"bucketed into __outros__ by diagnostics) — falling back to upper funnel "
+                f"bucketed into __others__ by diagnostics) — falling back to upper funnel "
                 f"(adstocked) for: {_dropped_lower}"
             )
         r = _run_raven_dim(
@@ -276,6 +299,7 @@ def run_deep_dive(
             verbose=verbose,
             auxiliary_metric_df=_aux,
             lower_funnel_variables=_lower_vars,
+            upper_funnel_adstock_effect=config.upper_funnel_adstock_effect_per_dim.get(dim),
         )
 
         models[dim] = r["model"]
@@ -288,6 +312,7 @@ def run_deep_dive(
         wapes[dim] = r["wape"]
         features_raw_all[dim] = r["features_raw"]
         col_maxes_all[dim] = r["col_maxes"]
+        auxiliary_metric_raw_all[dim] = r["auxiliary_metric_raw"]
 
     return DDResult(
         models=models,
@@ -302,24 +327,25 @@ def run_deep_dive(
         config=config,
         features_raw=features_raw_all,
         col_maxes=col_maxes_all,
+        auxiliary_metric_raw=auxiliary_metric_raw_all,
         upgrade_run_id=upgrade_run_id,
     )
 
 
 def extract_hill_params(
     raven2_model,
-    variaveis: list[str],
+    variables: list[str],
     features_raw: pd.DataFrame | None = None,
     col_maxes: pd.Series | None = None,
     y_max: float | None = None,
 ) -> pd.DataFrame:
     """Extract MAP Hill parameters per variable.
-    half_max_abs = half_max_norm * col_maxes[v]  → BRL/semana.
+    half_max_abs = half_max_norm * col_maxes[v]  → BRL/week.
     """
     import jax.numpy as jnp
     posterior = raven2_model.model_.inference_engine_.posterior_samples_
     records = []
-    for var in variaveis:
+    for var in variables:
         _q = quote(var, safe="")
         _keys = {k for k in posterior if _q in k}
 

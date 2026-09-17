@@ -64,6 +64,7 @@ def test_run_diagnostics_preserves_lower_funnel_vars_per_dim():
         vars_per_dim={"dim1": [slug_a, slug_b]},
         media_var="total",
         share_likelihood_metric="m",
+        auxiliary_metric="m",
         lower_funnel_vars_per_dim={"dim1": [slug_b]},
     )
     contrib_df = spend.copy()
@@ -97,6 +98,7 @@ def test_build_config_reads_lower_funnel_vars_per_dim(tmp_path):
         "vehicle_specs_path: \"vehicle_specs.yaml\"\n"
         "model_type: stan\n"
         "media_var: \"total\"\n"
+        "auxiliary_metric: \"investments\"\n"
         "lower_funnel_vars_per_dim:\n"
         "  dim1: [\"$metric:investments$category:cat1:a\"]\n"
     )
@@ -172,16 +174,20 @@ def test_run_deep_dive_lower_funnel_vars_per_dim_end_to_end():
     )
 
     slugs = list(spend_df.columns)
+    # No real diagnostics run here -- spend itself stands in as its own
+    # auxiliary metric, same convention as a client with no exposure data.
+    aux_dfs = {"TestDim": spend_df}
+
     config_split = DeepDiveConfig(
         dims=["TestDim"], vars_per_dim={"TestDim": slugs}, media_var="media_total",
         num_steps=200, lower_funnel_vars_per_dim={"TestDim": ["v2"]},
     )
-    result = run_deep_dive(config_split, upgrade, verbose=False)
+    result = run_deep_dive(config_split, upgrade, aux_dfs, verbose=False)
     assert result.models["TestDim"].lower_funnel_variables == ["v2"]
 
     config_default = DeepDiveConfig(
         dims=["TestDim"], vars_per_dim={"TestDim": slugs}, media_var="media_total",
         num_steps=200,
     )
-    result_default = run_deep_dive(config_default, upgrade, verbose=False)
+    result_default = run_deep_dive(config_default, upgrade, aux_dfs, verbose=False)
     assert result_default.models["TestDim"].lower_funnel_variables == []

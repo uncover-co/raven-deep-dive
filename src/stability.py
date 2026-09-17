@@ -17,10 +17,13 @@ from pipeline import DDResult, run_deep_dive
 def run_stability_test(
     config: DeepDiveConfig,
     upgrade: UpgradeResult,
+    auxiliary_metric_dfs: dict[str, pd.DataFrame],
     seeds: list[int] | None = None,
     instability_threshold: float = 0.05,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[int, DDResult]]:
     """Run MAP stability test across multiple JAX seeds.
+
+    auxiliary_metric_dfs: pass diag.auxiliary_metric_dfs from run_diagnostics().
 
     Returns (df_stab, stats_stab, runs).
     df_stab: long-form contrib_share per (seed, dim, item).
@@ -43,7 +46,9 @@ def run_stability_test(
             warnings.simplefilter("ignore")
             with contextlib.redirect_stdout(io.StringIO()):
                 with patch("jax.random.PRNGKey", new=lambda s, _s=seed, _o=_orig_prng: _o(_s)):
-                    runs[seed] = run_deep_dive(config, upgrade, verbose=False)
+                    runs[seed] = run_deep_dive(
+                        config, upgrade, auxiliary_metric_dfs=auxiliary_metric_dfs, verbose=False
+                    )
         pr_str = "  ".join(f"{d}={v:.3f}" for d, v in runs[seed].proxy_ratios.items())
         print(f"OK  proxy_ratios: {pr_str}")
 
@@ -72,13 +77,13 @@ def run_stability_test(
     )
     unstable = stats_stab[stats_stab["std"] > instability_threshold]
 
-    print(f"\nConcluído: {n} runs.")
-    print("\nEstabilidade por dimensão:")
+    print(f"\nCompleted: {n} runs.")
+    print("\nStability by dimension:")
     print(summary.to_string(index=False, float_format="{:.4f}".format))
     if len(unstable):
-        print(f"\n⚠  Sub-canais instáveis (std > {instability_threshold}):")
+        print(f"\n⚠  Unstable sub-channels (std > {instability_threshold}):")
         print(unstable[["dim", "item", "mean", "std"]].to_string(index=False, float_format="{:.4f}".format))
     else:
-        print(f"\n[ok] Nenhum sub-canal instável (std > {instability_threshold}) — MAP estável.")
+        print(f"\n[ok] No unstable sub-channels (std > {instability_threshold}) — MAP stable.")
 
     return df_stab, stats_stab, runs
