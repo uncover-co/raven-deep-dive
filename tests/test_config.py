@@ -37,12 +37,13 @@ def test_build_config_returns_dataclass(tmp_path):
         "vehicle": "fake_vehicle",
         "vehicle_specs_path": specs_path.name,
         "model_type": "stan",
-        "media_var": media_var,
+        "media_var": "configured-media-var",
         "auxiliary_metric": "investments",
     }))
 
     ur = _fake_upgrade_for_config([media_var])
-    cfg = build_config(ur, specs_path=str(client_path))
+    cfg = build_config(ur, specs_path=str(client_path), media_var_override=media_var)
+    assert cfg.media_var == media_var
     assert isinstance(cfg, DeepDiveConfig)
     assert cfg.dims == ["Region"]
     assert cfg.vars_per_dim["Region"] == [
