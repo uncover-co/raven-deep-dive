@@ -258,6 +258,7 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 | `test_plots.py` | Figuras Plotly geradas, template dark |
 | `test_report.py` | Criação de arquivos CSV e HTML |
 | `test_pipeline_helpers.py` | `align_to`, `wmon_norm` (Period e Datetime) |
+| `test_run_deep_dive_validation.py` | `auxiliary_metric_dfs` sem entry pro dim ou sem coluna obrigatória — levanta erro, sem fit |
 | `test_synthetic_deepdive.py` | Hill function, SyntheticDimension, recuperação de shares (slow) |
 
 ---
