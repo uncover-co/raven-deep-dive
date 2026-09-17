@@ -1,5 +1,6 @@
 import pandas as pd
 import sys, os
+import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
 from config import DeepDiveConfig, build_config, load_yaml
 from extraction import UpgradeResult
@@ -15,18 +16,40 @@ def _fake_upgrade_for_config(cols):
     )
 
 
-def test_build_config_returns_dataclass():
-    specs_path = os.path.join(os.path.dirname(__file__), "../configs/bradesco_eletro.yaml")
-    ur = _fake_upgrade_for_config(["investments:eletromidia:transacoes-cc:state:sao-paulo"])
-    cfg = build_config(
-        ur,
-        specs_path=specs_path,
-        media_var_override="investments:eletromidia:transacoes-cc:state:sao-paulo",
-    )
+def test_build_config_returns_dataclass(tmp_path):
+    """Synthetic vehicle_specs.yaml + client YAML -- doesn't depend on any
+    real client/vehicle in configs/ or data/vehicle_specs.yaml, so this test
+    stays valid regardless of which clients happen to exist on a given
+    branch (e.g. a production branch with a trimmed-down vehicle_specs.yaml)."""
+    vehicle_spec = {
+        "vehicle_slug": "fake",
+        "default_metric": "investments",
+        "models": {"default_template": "$metric:{metric}$category:brand:{brand}$category:{category}:{value}"},
+        "breakdowns": {"Region": {"category": "region", "values": ["north", "south"]}},
+    }
+    specs_path = tmp_path / "vehicle_specs.yaml"
+    specs_path.write_text(yaml.dump({"vehicles": {"fake_vehicle": vehicle_spec}}))
+
+    media_var = "$metric:investments$vehicle:fake_vehicle$category:brand:acme"
+    client_path = tmp_path / "client.yaml"
+    client_path.write_text(yaml.dump({
+        "brand": "acme",
+        "vehicle": "fake_vehicle",
+        "vehicle_specs_path": specs_path.name,
+        "model_type": "stan",
+        "media_var": media_var,
+        "auxiliary_metric": "investments",
+    }))
+
+    ur = _fake_upgrade_for_config([media_var])
+    cfg = build_config(ur, specs_path=str(client_path))
     assert isinstance(cfg, DeepDiveConfig)
-    assert len(cfg.dims) > 0
-    assert all(d in cfg.vars_per_dim for d in cfg.dims)
-    assert cfg.brand == "bradesco"
+    assert cfg.dims == ["Region"]
+    assert cfg.vars_per_dim["Region"] == [
+        "$metric:investments$category:brand:acme$category:region:north",
+        "$metric:investments$category:brand:acme$category:region:south",
+    ]
+    assert cfg.brand == "acme"
     assert cfg.share_prior_scale == 0.05
 
 
