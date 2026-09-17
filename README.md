@@ -195,7 +195,7 @@ Alternativa (mais simples): um único `!instance`/`!params` sem dict aplica o me
 | Métrica | Fórmula | Valor OK | Atenção |
 |---|---|---|---|
 | `proxy_ratio` | `Σ contribs / Σ C_t` | 0.85 – 1.15 | Fora: revisar `proxy_ct_tolerance` ou spend |
-| `csl_max_dev` | `max_k \|contrib_share_k − spend_share_k\|` | < 0.20 | > 0.20: desvio forte — sinal real ou ruído |
+| `csl_max_dev` | `max_k \|contrib_share_k − csl_metric_share_k\|` (métrica de referência do prior CSL — `auxiliary_metric`, spend quando não há exposição real) | < 0.20 | > 0.20: desvio forte — sinal real ou ruído |
 
 ### Métricas de Output
 
