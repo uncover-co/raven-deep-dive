@@ -58,6 +58,20 @@ def test_tiny_vars_bucketed_into_others():
     ]
 
 
+def test_bucketed_raw_has_original_per_member_series():
+    """diag.bucketed_raw exposes the original (pre-aggregation) investment +
+    auxiliary_metric series for each __others__ member, for audit purposes."""
+    cfg, upgrade = _make_fixtures()
+    _, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    df = diag.bucketed_raw["Praca"]
+    assert set(df.columns) == {"date", "variable", "investment", "auxiliary_metric"}
+    assert set(df["variable"]) == {
+        "$metric:invest$category:praca:rec", "$metric:invest$category:praca:go",
+    }
+    # 52 weeks x 2 bucketed members
+    assert len(df) == 104
+
+
 def test_others_inherits_lower_funnel_when_bucket_fully_lower():
     """Both bucketed members (rec, go) are configured lower funnel -> the
     __others__ aggregate is unambiguous, inherits lower funnel too."""

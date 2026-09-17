@@ -88,6 +88,17 @@ def generate_report(
         pd.concat(hill_frames).reset_index().to_csv(csv_hill, index=False)
         paths["csv_hill_params"] = csv_hill
 
+    # ── model_inputs.csv ─────────────────────────────────────────────────────
+    csv_inputs = os.path.join(out, "model_inputs.csv")
+    _build_model_inputs_df(result).to_csv(csv_inputs, index=False)
+    paths["csv_model_inputs"] = csv_inputs
+
+    # ── model_inputs_bucketed_detail.csv (audit only, not fed to the model) ───
+    if diag is not None and diag.bucketed_raw:
+        csv_bucketed = os.path.join(out, "model_inputs_bucketed_detail.csv")
+        _build_bucketed_detail_df(diag).to_csv(csv_bucketed, index=False)
+        paths["csv_model_inputs_bucketed_detail"] = csv_bucketed
+
     # ── contributions.html ────────────────────────────────────────────────────
     html_c = os.path.join(out, "contributions.html")
     plot_contributions(result).write_html(html_c)
@@ -195,6 +206,67 @@ def _build_contributions_df(
                     rows.append(_row(level, item, contrib_abs, rollup_total, spend_abs, spend_share))
 
     return pd.DataFrame(rows)
+
+
+def _build_model_inputs_df(result) -> pd.DataFrame:
+    """Long-form export of what actually fed each dimension's Raven fit:
+    investment (features_raw) and the CSL prior's metric (auxiliary_metric_raw),
+    same week + same variable. Both are already reindexed to the model's time
+    index and column set by _run_raven_dim, so they align without extra work.
+
+    Columns: dim, variable, date, investment, auxiliary_metric.
+    """
+    frames = []
+    for dim in result.config.dims:
+        inv = result.features_raw.get(dim)
+        if inv is None:
+            continue
+        aux = result.auxiliary_metric_raw.get(dim)
+        inv_long = (
+            inv.rename_axis("date").reset_index()
+            .melt(id_vars="date", var_name="variable", value_name="investment")
+        )
+        if aux is not None:
+            aux_long = (
+                aux.rename_axis("date").reset_index()
+                .melt(id_vars="date", var_name="variable", value_name="auxiliary_metric")
+            )
+            merged = inv_long.merge(aux_long, on=["date", "variable"], how="left")
+        else:
+            merged = inv_long
+            merged["auxiliary_metric"] = float("nan")
+        merged.insert(0, "dim", dim)
+        frames.append(merged)
+
+    if not frames:
+        return pd.DataFrame(columns=["dim", "variable", "date", "investment", "auxiliary_metric"])
+    return (
+        pd.concat(frames, ignore_index=True)
+        .sort_values(["dim", "variable", "date"])
+        .reset_index(drop=True)
+    )
+
+
+def _build_bucketed_detail_df(diag: DiagnosisResult) -> pd.DataFrame:
+    """Audit export: original per-variable series (investment + auxiliary
+    metric) for every member absorbed into an __others__ bucket, before the
+    aggregation that _build_model_inputs_df's export actually reflects.
+    Reporting/auditing only -- not what fed the model.
+
+    Columns: dim, variable, date, investment, auxiliary_metric.
+    """
+    if not diag.bucketed_raw:
+        return pd.DataFrame(columns=["dim", "variable", "date", "investment", "auxiliary_metric"])
+    frames = []
+    for dim, df_dim in diag.bucketed_raw.items():
+        df_dim = df_dim.copy()
+        df_dim.insert(0, "dim", dim)
+        frames.append(df_dim)
+    return (
+        pd.concat(frames, ignore_index=True)
+        .sort_values(["dim", "variable", "date"])
+        .reset_index(drop=True)
+    )
 
 
 def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:

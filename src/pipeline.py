@@ -29,6 +29,7 @@ class DDResult:
     config: DeepDiveConfig
     features_raw: dict[str, pd.DataFrame] = field(default_factory=dict)
     col_maxes: dict[str, pd.Series] = field(default_factory=dict)
+    auxiliary_metric_raw: dict[str, pd.DataFrame] = field(default_factory=dict)
     upgrade_run_id: str = ""
 
 
@@ -134,15 +135,19 @@ def _run_raven_dim(
         auxiliary_metric_df = auxiliary_metric_df.copy()
         auxiliary_metric_df.index = wmon_norm(auxiliary_metric_df.index)
 
+    # Metric actually fed to the CSL prior -- kept as-is (not just recomputed
+    # from auxiliary_metric_df) so callers can export exactly what the model saw.
+    _csl_metric_df = (
+        auxiliary_metric_df.reindex(y2.index).fillna(0)
+        if auxiliary_metric_df is not None
+        else features_raw[variables]
+    )
+
     _csl = ContributionShareLikelihood(
         target_effect_names=[
             f"latent/contribution/media/{quote(v, safe='')}" for v in variables
         ],
-        metric_df=(
-            auxiliary_metric_df.reindex(y2.index).fillna(0)
-            if auxiliary_metric_df is not None
-            else features_raw[variables]
-        ),
+        metric_df=_csl_metric_df,
         scale=share_prior_scale,
         name=dim_name.replace(" ", "_"),
     )
@@ -219,6 +224,7 @@ def _run_raven_dim(
         "variables": variables,
         "features_raw": features_raw,
         "col_maxes": col_maxes,
+        "auxiliary_metric_raw": _csl_metric_df,
     }
 
 
@@ -244,6 +250,7 @@ def run_deep_dive(
 
     models, contribs, shares_model, shares_spend = {}, {}, {}, {}
     proxy_ratios, csl_devs, r2s, wapes, features_raw_all, col_maxes_all = {}, {}, {}, {}, {}, {}
+    auxiliary_metric_raw_all = {}
 
     for dim in config.dims:
         slugs = config.vars_per_dim.get(dim, [])
@@ -303,6 +310,7 @@ def run_deep_dive(
         wapes[dim] = r["wape"]
         features_raw_all[dim] = r["features_raw"]
         col_maxes_all[dim] = r["col_maxes"]
+        auxiliary_metric_raw_all[dim] = r["auxiliary_metric_raw"]
 
     return DDResult(
         models=models,
@@ -317,6 +325,7 @@ def run_deep_dive(
         config=config,
         features_raw=features_raw_all,
         col_maxes=col_maxes_all,
+        auxiliary_metric_raw=auxiliary_metric_raw_all,
         upgrade_run_id=upgrade_run_id,
     )
 

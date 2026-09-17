@@ -216,6 +216,8 @@ Output dir: `outputs/{cliente}_{vehicle}/` (gerado por `generate_report()`)
 | `contributions.csv` | dim, item, contrib_share, spend_share, roas_index (+ rollups quando `vehicle_spec` tem hierarquia) |
 | `diagnostics.csv` | Saída de `run_diagnostics`: status (kept/discarded_*/others_aggregate), reason, active_weeks, gate_total — só se `diag` for passado |
 | `hill_params.csv` | Parâmetros Hill (max_effect, half_max, slope) por variável e dimensão |
+| `model_inputs.csv` | dim, variable, date, investment, auxiliary_metric — exatamente o que entrou no fit de cada dim (já pós-diagnóstico: `__others__<dim>` no lugar dos membros absorvidos) |
+| `model_inputs_bucketed_detail.csv` | Mesmas colunas + `dim`, mas com as séries originais (pré-agregação) de cada membro absorvido em `__others__` — só para auditoria, nunca alimentou o modelo. Gerado só se `diag` for passado e houver bucketing |
 | `contributions.html` | Barra agrupada: contrib_share vs. spend_share |
 | `roas_index.html` | Heatmap ROAS Index por dimensão × sub-canal |
 | `weekly_{dim}.html` | Área empilhada: contribuição semanal por sub-canal, um por dimensão |

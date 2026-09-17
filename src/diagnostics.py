@@ -18,6 +18,7 @@ class DiagnosisResult:
     bucketed: dict[str, list[str]]  # dim -> variables bucketed into __others__
     skipped_dims: list[str]          # dims skipped (HHI too high or < 2 active)
     auxiliary_metric_dfs: dict[str, pd.DataFrame] | None = None  # dim -> df aligned to final kept cols (config.auxiliary_metric values), feeds ContributionShareLikelihood prior only
+    bucketed_raw: dict[str, pd.DataFrame] | None = None  # dim -> long-form (variable, date, investment, auxiliary_metric) for each __others__ member, pre-aggregation. Audit-only, not fed to the model.
 
 
 def run_diagnostics(
@@ -78,6 +79,7 @@ def run_diagnostics(
     aux_metric = config.auxiliary_metric
     aux_prefix = f"$metric:{aux_metric}$"
     aux_dfs: dict[str, pd.DataFrame] = {}
+    bucketed_raw: dict[str, pd.DataFrame] = {}
 
     def _stats_for(prefix: str, tail_of: dict[str, str]) -> dict[str, dict]:
         out = {}
@@ -158,6 +160,26 @@ def run_diagnostics(
                 kept.append(others_col)
                 bucketed[dim] = excl
 
+                # Audit-only: original per-member series before the __others__
+                # aggregation, so a human can trace what went into that bucket.
+                # Never fed to the model -- see aux_dfs below for that.
+                inv_orig = df[excl]
+                aux_orig_cols = {
+                    m: (df[aux_prefix + tail_of[m]] if aux_prefix + tail_of[m] in df.columns
+                        else pd.Series(0.0, index=df.index))
+                    for m in excl
+                }
+                aux_orig = pd.DataFrame(aux_orig_cols, index=df.index)
+                inv_long = (
+                    inv_orig.rename_axis("date").reset_index()
+                    .melt(id_vars="date", var_name="variable", value_name="investment")
+                )
+                aux_long = (
+                    aux_orig.rename_axis("date").reset_index()
+                    .melt(id_vars="date", var_name="variable", value_name="auxiliary_metric")
+                )
+                bucketed_raw[dim] = inv_long.merge(aux_long, on=["date", "variable"], how="left")
+
                 configured_lower = set(config.lower_funnel_vars_per_dim.get(dim, []))
                 excl_lower = [v for v in excl if v in configured_lower]
                 # excl members no longer exist as standalone slugs.
@@ -220,6 +242,7 @@ def run_diagnostics(
         bucketed=bucketed,
         skipped_dims=skipped_dims,
         auxiliary_metric_dfs=aux_dfs or None,
+        bucketed_raw=bucketed_raw or None,
     )
 
 
