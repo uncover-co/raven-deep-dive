@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
@@ -242,11 +243,23 @@ def build_config(
 DEFAULT_MAX_LAG = 13
 
 
+def _label_candidates(slug: str) -> set[str]:
+    """Short names a slug can be referred to by.
+
+    `{value}` is not always the last segment of a template (see
+    `state_template`), so the `$category:<cat>:<value>` form is matched too.
+    """
+    names = {slug.split(":")[-1]}
+    names.update(re.findall(r"\$[^$:]+:[^$:]+:([^$]+)", slug))
+    names.update(re.findall(r"\$state:([^$]+)", slug))
+    return names
+
+
 def _resolve_var(name: str, variables: list[str], dim: str) -> str:
     """Match a short label (or a full slug) against the dimension's variables."""
     if name in variables:
         return name
-    hits = [v for v in variables if v.split(":")[-1] == name]
+    hits = [v for v in variables if name in _label_candidates(v)]
     if len(hits) == 1:
         return hits[0]
     if not hits:
@@ -262,7 +275,7 @@ def override_funnel(
     config,
     dim: str,
     *,
-    lower=(),
+    lower=None,
     adstock: dict | None = None,
     default_max_lag: int = DEFAULT_MAX_LAG,
     verbose: bool = True,
@@ -278,7 +291,8 @@ def override_funnel(
 
     lower
         Variables fit without adstock (immediate response). Replaces whatever
-        was declared for this dim in the client YAML.
+        was declared for this dim in the client YAML. `None` (the default)
+        leaves the current classification alone -- pass `[]` to clear it.
     adstock
         ``{variable: effect}`` for upper-funnel variables, e.g.
         ``WeibullAdstockEffect(max_lag=4)`` or ``GeometricAdstockEffect()``.
@@ -299,8 +313,16 @@ def override_funnel(
         )
     variables = config.vars_per_dim[dim]
 
-    lower_slugs = [_resolve_var(n, variables, dim) for n in lower]
-    config.lower_funnel_vars_per_dim[dim] = lower_slugs
+    if isinstance(lower, str):
+        raise TypeError(
+            f"lower must be a list of variables, not a string -- did you mean "
+            f'lower=["{lower}"]?'
+        )
+    if lower is None:
+        lower_slugs = list(config.lower_funnel_vars_per_dim.get(dim, []))
+    else:
+        lower_slugs = [_resolve_var(n, variables, dim) for n in lower]
+        config.lower_funnel_vars_per_dim[dim] = lower_slugs
 
     upper_slugs = [v for v in variables if v not in set(lower_slugs)]
     if adstock is not None:
@@ -323,6 +345,14 @@ def override_funnel(
             s: given.get(s) or WeibullAdstockEffect(max_lag=default_max_lag)
             for s in upper_slugs
         }
+    elif isinstance(config.upper_funnel_adstock_effect_per_dim.get(dim), dict):
+        # A variable that just moved to lower funnel would leave a stale key
+        # here, and Raven only complains at fit time -- blaming diagnostics.
+        config.upper_funnel_adstock_effect_per_dim[dim] = {
+            s: eff
+            for s, eff in config.upper_funnel_adstock_effect_per_dim[dim].items()
+            if s in set(upper_slugs)
+        }
 
     if verbose:
         print(f"[{dim}]")
@@ -330,14 +360,14 @@ def override_funnel(
             eff = config.upper_funnel_adstock_effect_per_dim.get(dim, {}).get(s)
             print(f"   upper  {s.split(':')[-1]:<40} {_describe_effect(eff)}")
         for s in lower_slugs:
-            print(f"   lower  {s.split(':')[-1]:<40} sem adstock")
+            print(f"   lower  {s.split(':')[-1]:<40} no adstock")
     return config
 
 
 def _describe_effect(effect) -> str:
     """One-line description of an adstock effect, for the override summary."""
     if effect is None:
-        return "adstock default da lib"
+        return "library default adstock"
     max_lag = getattr(effect, "max_lag", None)
     name = type(effect).__name__
     return f"{name}(max_lag={max_lag})" if max_lag is not None else name

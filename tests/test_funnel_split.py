@@ -389,3 +389,51 @@ def test_override_funnel_rejects_ambiguous_label():
     cfg = _cfg([P + "a", "$metric:m$category:outra:a", P + "b"])
     with pytest.raises(ValueError, match="ambiguous"):
         override_funnel(cfg, "dim1", lower=["a"], verbose=False)
+
+
+def test_override_funnel_without_lower_keeps_the_current_classification():
+    """Calling it only to tweak adstock used to wipe the funnel split the
+    diagnostics had just established -- silently, changing the fit."""
+    from config import override_funnel
+    from prophetverse.effects import WeibullAdstockEffect
+
+    cfg = _cfg()
+    cfg.lower_funnel_vars_per_dim["dim1"] = ["__others__dim1"]
+    override_funnel(cfg, "dim1", adstock={"a": WeibullAdstockEffect(max_lag=4)},
+                    verbose=False)
+
+    assert cfg.lower_funnel_vars_per_dim["dim1"] == ["__others__dim1"]
+
+
+def test_override_funnel_with_empty_lower_clears_the_classification():
+    from config import override_funnel
+
+    cfg = _cfg()
+    cfg.lower_funnel_vars_per_dim["dim1"] = ["__others__dim1"]
+    override_funnel(cfg, "dim1", lower=[], verbose=False)
+
+    assert cfg.lower_funnel_vars_per_dim["dim1"] == []
+
+
+def test_override_funnel_prunes_a_stale_adstock_dict():
+    """Moving a variable to lower funnel leaves a dict adstock covering it;
+    Raven only notices at fit time, and blames diagnostics for it."""
+    from config import override_funnel
+    from prophetverse.effects import WeibullAdstockEffect
+
+    cfg = _cfg()
+    cfg.upper_funnel_adstock_effect_per_dim["dim1"] = {
+        v: WeibullAdstockEffect(max_lag=4) for v in cfg.vars_per_dim["dim1"]
+    }
+    override_funnel(cfg, "dim1", lower=["__others__dim1"], verbose=False)
+
+    upper = {v for v in cfg.vars_per_dim["dim1"] if v != "__others__dim1"}
+    assert set(cfg.upper_funnel_adstock_effect_per_dim["dim1"]) == upper
+
+
+def test_override_funnel_rejects_a_bare_string_for_lower():
+    """lower="x" would iterate characters and fail with '_' is not a variable."""
+    from config import override_funnel
+
+    with pytest.raises(TypeError, match="not a string"):
+        override_funnel(_cfg(), "dim1", lower="__others__dim1", verbose=False)
