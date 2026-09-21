@@ -87,7 +87,7 @@ def test_run_diagnostics_preserves_upper_funnel_adstock_effect_per_dim():
     )
     contrib_df = spend.copy()
     contrib_df["total"] = rng.random(52) * 100
-    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={}, y_hat=None)
+    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={})
 
     new_cfg, _ = run_diagnostics(cfg, upgrade)
     assert new_cfg.upper_funnel_adstock_effect_per_dim == {"dim1": marker}
@@ -119,7 +119,7 @@ def test_per_variable_adstock_end_to_end_produces_different_decay():
     contrib_df["media_total"] = media_total
 
     upgrade = UpgradeResult(
-        model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={}, y_hat=None,
+        model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={},
     )
     config = DeepDiveConfig(
         dims=["TestDim"],

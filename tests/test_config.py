@@ -12,7 +12,6 @@ def _fake_upgrade_for_config(cols):
         contrib_df=pd.DataFrame(0.0, index=range(10), columns=cols),
         spend_df=pd.DataFrame(0.0, index=range(10), columns=cols),
         mmm_config={},
-        y_hat=pd.Series(0.0, index=range(10)),
     )
 
 

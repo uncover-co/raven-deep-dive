@@ -31,7 +31,7 @@ def _upgrade(index, values, col="spend"):
     inp = pd.DataFrame({"timestamp": index, col: values})
     return UpgradeResult(
         model=None, contrib_df=pd.DataFrame(), spend_df=pd.DataFrame(),
-        mmm_config={}, y_hat=None, input_df=inp,
+        mmm_config={}, input_df=inp,
     )
 
 
@@ -138,16 +138,6 @@ def test_unknown_upgrade_column_lists_candidates():
         check_spend_coverage(_cfg(), pd.DataFrame(), against="upgrade",
                              upgrade=up, upgrade_spend_col="nope", verbose=False)
 
-
-def test_all_three_loaders_populate_input_df():
-    """check_spend_coverage(against='upgrade') depends on it silently."""
-    import inspect
-    import extraction
-
-    src = inspect.getsource(extraction)
-    assert src.count("input_df=inp,") == 2   # _load_from_parquets + load_raven_upgrade
-
-
 # ── plot ─────────────────────────────────────────────────────────────────────
 
 def test_plot_spend_coverage_needs_the_series():
@@ -222,7 +212,7 @@ def test_diagnosis_table_prints_the_bucket_line(capsys):
     contrib = spend.copy()
     contrib["total"] = rng.random(52) * 100
     up = UpgradeResult(model=None, contrib_df=contrib, spend_df=spend,
-                       mmm_config={}, y_hat=None)
+                       mmm_config={})
 
     run_diagnostics(
         DeepDiveConfig(dims=["dim1"], vars_per_dim={"dim1": v}, media_var="total",

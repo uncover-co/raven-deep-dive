@@ -347,11 +347,16 @@ def extract_hill_params(
     records = []
     for var in variables:
         _q = quote(var, safe="")
-        _keys = {k for k in posterior if _q in k}
-
-        def _mean(suffix, _k=_keys):
-            key = next((k for k in _k if k.endswith(suffix)), None)
-            return float(jnp.mean(posterior[key])) if key else None
+        # Substring matching picks up a sibling whose slug contains this one
+        # (e.g. "video" inside "videoview"), and `next()` over a set then
+        # resolves in iteration order -- a different variable's parameters,
+        # nondeterministically. The site name ends with "/<slug><suffix>".
+        def _mean(suffix, _q=_q):
+            want = f"/{_q}{suffix}"
+            keys = [k for k in posterior if k.endswith(want)]
+            if len(keys) != 1:
+                return None
+            return float(jnp.mean(posterior[keys[0]]))
 
         me, hm, sl = _mean("/max_effect"), _mean("/half_max"), _mean("/slope")
         raw_max = float(col_maxes[var]) if col_maxes is not None and var in col_maxes else None

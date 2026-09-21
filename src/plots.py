@@ -262,9 +262,19 @@ def plot_roas_index(result) -> go.Figure:
 
 # ── Helpers: label + summary ──────────────────────────────────────────────────
 
-def _clean_label(s: str) -> str:
+def _clean_label(s: str, category: str | None = None) -> str:
+    """Display name for a slug.
+
+    Pass `category` whenever the caller knows it. Without it the last `$`
+    segment is the only guess available, and that is the breakdown value only
+    when `{value}` ends the template -- `state_template` and tiktok's
+    `campaign_category` both put it in the middle, so every item would come
+    out labelled "bradesco" / "tiktok".
+    """
     if not s.startswith("$"):
         return s
+    if category:
+        return _slug_val(s, category)
     parts = s.split("$")
     return parts[-1].split(":")[-1] if parts else s
 
@@ -290,8 +300,9 @@ def _print_breakdown_summary(result, dim: str) -> None:
     print(f"{'─'*66}")
     print(f"  {'Sub-channel':<30} {'Absolute':>12}  {'% anchor':>9}")
     print(f"{'─'*66}")
+    _cat = _dim_category(result, dim)
     for col in contribs.columns:
-        label = _clean_label(col)
+        label = _clean_label(col, _cat)
         val = float(contribs[col].sum())
         pct = val / total_anchor * 100 if total_anchor else float("nan")
         print(f"  {label:<30} {val:>12,.0f}  {pct:>8.1f}%")
@@ -315,9 +326,10 @@ def plot_breakdown_total(result, dim: str) -> go.Figure:
 
     fig = go.Figure()
     cumulative = 0.0
+    _cat = _dim_category(result, dim)
     for i, col in enumerate(contribs.columns):
         val = float(totals[col])
-        label = _clean_label(col)
+        label = _clean_label(col, _cat)
         pct = val / total_anchor * 100 if total_anchor else 0.0
         fig.add_trace(go.Bar(
             x=[val],
@@ -408,10 +420,10 @@ def _rollup_order_for_dim(
     return result
 
 
-def _short_label(s: str, maxlen: int = 30) -> str:
-    """Strip $metric slug prefix and truncate."""
+def _short_label(s: str, maxlen: int = 30, category: str | None = None) -> str:
+    """Strip $metric slug prefix and truncate. See `_clean_label` on `category`."""
     if s.startswith("$"):
-        s = s.split("$")[-1].split(":")[-1]
+        s = _slug_val(s, category) if category else s.split("$")[-1].split(":")[-1]
     return s[:maxlen]
 
 
@@ -637,6 +649,12 @@ def analyze_batch(
 
 
 # ── Tree (sunburst / treemap) visualization ────────────────────────────────────
+
+def _dim_category(result, dim: str) -> str:
+    """The breakdown's `category`, so labels don't fall back to the last segment."""
+    spec = getattr(getattr(result, "config", None), "vehicle_spec", None) or {}
+    return spec.get("breakdowns", {}).get(dim, {}).get("category", "")
+
 
 def _slug_val(slug: str, category: str) -> str:
     """Extract clean dimension value from raw slug."""
