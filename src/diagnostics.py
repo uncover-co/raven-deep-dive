@@ -4,6 +4,9 @@ import re
 import pandas as pd
 
 
+_ABS_MIN_WEEKS = 2
+
+
 def sanitize_dim_name(name: str) -> str:
     """Slugify a dimension name for use as a DataFrame column or filename."""
     return re.sub(r"[^\w-]", "", name.lower().replace(" ", "-"))
@@ -26,7 +29,6 @@ def run_diagnostics(
     upgrade: UpgradeResult,
     min_spend_share: float | None = None,
     hhi_threshold: float | None = None,
-    min_active_weeks: int | None = None,
     min_active_weeks_frac: float | None = None,
 ) -> tuple[DeepDiveConfig, DiagnosisResult]:
     """Filter config vars by spend structure; bucket tiny vars into __others__.
@@ -37,7 +39,6 @@ def run_diagnostics(
     """
     min_spend_share = min_spend_share if min_spend_share is not None else config.min_spend_share
     hhi_threshold = hhi_threshold if hhi_threshold is not None else config.hhi_threshold
-    min_active_weeks = min_active_weeks if min_active_weeks is not None else config.min_active_weeks
     min_active_weeks_frac = (
         min_active_weeks_frac if min_active_weeks_frac is not None else config.min_active_weeks_frac
     )
@@ -57,6 +58,8 @@ def run_diagnostics(
     rows: list[dict] = []
     new_vars_per_dim: dict[str, list[str]] = {}
     bucketed: dict[str, list[str]] = {}
+    bucket_notes: dict[str, str] = {}
+    bucket_info: dict[str, dict] = {}
     skipped_dims: list[str] = []
     # Carried through as-is, except: an __others__ bucket where every member
     # was itself configured lower funnel inherits that (a residual made only
@@ -66,7 +69,10 @@ def run_diagnostics(
     # see README Sec. 8 for why this is a known, accepted limitation.
     new_lower_funnel_vars_per_dim = {k: list(v) for k, v in config.lower_funnel_vars_per_dim.items()}
     n_weeks = len(df)
-    effective_min_weeks = max(min_active_weeks, round(min_active_weeks_frac * n_weeks))
+    # Relative floor, so the bar scales with the modelling window. _ABS_MIN_WEEKS
+    # is a guard, not a knob: below 2 active weeks a Hill curve has nothing to
+    # fit, and 5% of a short series can round down to 1.
+    effective_min_weeks = max(_ABS_MIN_WEEKS, round(min_active_weeks_frac * n_weeks))
 
     # share_likelihood_metric is always the Hill-curve regressor; never changes.
     share_metric = config.share_likelihood_metric
@@ -187,15 +193,35 @@ def run_diagnostics(
                     new_lower_funnel_vars_per_dim[dim] = [
                         v for v in new_lower_funnel_vars_per_dim[dim] if v not in excl
                     ]
-                if excl_lower and len(excl_lower) == len(excl):
+                # The bucket name is deterministic, so the DS may have declared it
+                # in the client YAML ahead of time. That declaration wins over the
+                # inference below -- don't claim a default that didn't happen.
+                pre_declared = others_col in new_lower_funnel_vars_per_dim.get(dim, [])
+                if pre_declared:
+                    bucket_notes[dim] = "bucket declared as lower funnel in the client YAML."
+                elif excl_lower and len(excl_lower) == len(excl):
                     new_lower_funnel_vars_per_dim.setdefault(dim, []).append(others_col)
-                    print(f"  [{dim}] {others_col}: all {len(excl)} bucketed members are "
-                          f"configured lower funnel -> others inherits lower funnel too.")
+                    bucket_notes[dim] = (
+                        f"all {len(excl)} members were lower funnel, so the aggregate "
+                        f"inherits lower."
+                    )
                 elif excl_lower:
-                    print(f"  [WARNING] [{dim}] {others_col}: {len(excl_lower)}/{len(excl)} "
-                          f"bucketed members are configured lower funnel, mixed with upper-"
-                          f"funnel members -> no unambiguous classification, defaulting the "
-                          f"whole aggregate to upper funnel (adstocked). See README Sec. 8.")
+                    bucket_notes[dim] = (
+                        f"mixed members ({len(excl_lower)}/{len(excl)} lower funnel): no "
+                        f"unambiguous class, so the aggregate stays upper."
+                    )
+
+                # What the DS needs to place this bucket: how much it weighs and
+                # how its members were classified before being merged.
+                bucket_share = (
+                    sum(gate_stats[m]["total"] for m in excl) / cat_total
+                    if cat_total > 0 else 0.0
+                )
+                bucket_info[dim] = {
+                    "share": bucket_share,
+                    "declared_lower": excl_lower,
+                    "default_upper": [v for v in excl if v not in configured_lower],
+                }
             new_vars_per_dim[dim] = kept
 
             aux_cols = {}
@@ -215,6 +241,10 @@ def run_diagnostics(
 
     spend_report = pd.DataFrame(rows)
     _print_diagnosis(spend_report, min_spend_share, hhi_threshold)
+    _print_model_composition(
+        new_vars_per_dim, new_lower_funnel_vars_per_dim, bucketed, bucket_notes,
+        bucket_info,
+    )
 
     new_config = DeepDiveConfig(
         dims=[d for d in config.dims if d in new_vars_per_dim],
@@ -231,7 +261,6 @@ def run_diagnostics(
         num_steps=config.num_steps,
         min_spend_share=min_spend_share,
         hhi_threshold=hhi_threshold,
-        min_active_weeks=min_active_weeks,
         min_active_weeks_frac=min_active_weeks_frac,
         vehicle_spec=config.vehicle_spec,
         lower_funnel_vars_per_dim=new_lower_funnel_vars_per_dim,
@@ -243,6 +272,91 @@ def run_diagnostics(
         skipped_dims=skipped_dims,
         auxiliary_metric_dfs=aux_dfs or None,
         bucketed_raw=bucketed_raw or None,
+    )
+
+
+def _print_model_composition(
+    vars_per_dim: dict[str, list[str]],
+    lower_per_dim: dict[str, list[str]],
+    bucketed: dict[str, list[str]],
+    bucket_notes: dict[str, str],
+    bucket_info: dict[str, dict],
+) -> None:
+    """Show, per dimension, exactly which variables entered the model and how
+    each one is classified (upper = adstocked, lower = immediate response).
+
+    Funnel classification is only fully resolved here, after bucketing: a
+    `__others__` column doesn't exist until diagnostics builds it, so its
+    classification can't be reviewed in the client YAML beforehand. Printing
+    it means the DS can override it in the notebook, before the fit, instead
+    of editing the YAML and re-running diagnostics.
+    """
+    w = 75
+    print("─" * w)
+    print("  FINAL MODEL COMPOSITION  (upper = adstocked · lower = immediate response)")
+    print("─" * w)
+    # __others__ names are short and meaningful in full; only real slugs get
+    # truncated for display.
+    def _label(s: str) -> str:
+        return s if s.startswith("__others__") else _slug_label(s)
+
+    for dim, slugs in vars_per_dim.items():
+        lower = set(lower_per_dim.get(dim, []))
+        up = [s for s in slugs if s not in lower]
+        lo = [s for s in slugs if s in lower]
+        print(f"  [{dim}]  {len(slugs)} variable(s)")
+        if up:
+            print(f"       upper  {', '.join(_label(s) for s in up)}")
+        if lo:
+            print(f"       lower  {', '.join(_label(s) for s in lo)}")
+        members = bucketed.get(dim)
+        if not members:
+            continue
+        others = next((s for s in slugs if s.startswith("__others__")), None)
+        if others is None:
+            continue
+        cls = "lower" if others in lower else "upper"
+        info = bucket_info.get(dim, {})
+        decl_lower = info.get("declared_lower", [])
+        decl_upper = info.get("default_upper", list(members))
+
+        print()
+        print(f"       {others}")
+        print(f"         current class      {cls}"
+              f"{' (adstocked)' if cls == 'upper' else ' (immediate response)'}")
+        print(f"         weight in dim      {info.get('share', 0.0):.1%} "
+              f"of the gate metric")
+        print(f"         aggregates {len(members)} variable(s), previously classified as:")
+        print(f"           declared lower ({len(decl_lower)})")
+        print(_wrap_members(decl_lower, _label))
+        print(f"           undeclared, default upper ({len(decl_upper)})")
+        print(_wrap_members(decl_upper, _label))
+        note = bucket_notes.get(dim)
+        if note:
+            print(f"         note: {note}")
+        if cls == "upper":
+            print(f"         to treat this bucket as lower funnel, before the fit:")
+            print(f"           config.lower_funnel_vars_per_dim"
+                  f".setdefault(\"{dim}\", []).append(\"{others}\")")
+        else:
+            print(f"         to treat this bucket as upper funnel, before the fit:")
+            print(f"           config.lower_funnel_vars_per_dim[\"{dim}\"]"
+                  f".remove(\"{others}\")")
+    print("─" * w)
+
+
+def _wrap_members(members: list[str], label_fn) -> str:
+    """One indented, wrapped block listing bucket members (dash when empty)."""
+    import textwrap
+
+    pad = " " * 13
+    if not members:
+        return pad + "—"
+    return textwrap.fill(
+        ", ".join(label_fn(m) for m in members),
+        width=76, initial_indent=pad, subsequent_indent=pad,
+        # slugs carry hyphens; breaking on them splits a name across lines
+        break_on_hyphens=False, break_long_words=False,
     )
 
 
