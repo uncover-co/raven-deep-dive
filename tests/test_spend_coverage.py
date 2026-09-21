@@ -175,3 +175,80 @@ def test_plot_spend_coverage_styles_every_subplot():
     grids = {fig.layout[k].gridcolor for k in fig.layout
              if k.startswith(("xaxis", "yaxis"))}
     assert grids == {"#2A2A2A"}
+
+
+# ── silent-display regressions found by the sweep ────────────────────────────
+
+def test_sunburst_keeps_a_leaf_that_belongs_to_no_group():
+    """`__others__<dim>` is never in the spec's `grupos:`, so the tree dropped
+    it -- shrinking the root and renormalising every percent and ROAS colour."""
+    from plots import _groups_sunburst
+
+    groups = {
+        "g1": {"vertical": "ruas", "tipo": "outdoor", "ambientes": ["a1", "a2"]},
+        "g2": {"vertical": "transportes", "tipo": "indoor", "ambientes": ["a3"]},
+    }
+    pfx = "$metric:m$category:ambiente:"
+    sm = pd.Series({pfx + "a1": 0.25, pfx + "a2": 0.25, pfx + "a3": 0.20,
+                    "__others__ambiente": 0.30})
+    ss = pd.Series({pfx + "a1": 0.20, pfx + "a2": 0.20, pfx + "a3": 0.20,
+                    "__others__ambiente": 0.40})
+
+    out = _groups_sunburst(sm, ss, "ambiente", groups, "ambientes")
+    root_total = sum(v for p, v in zip(out["parents"], out["values_m"]) if p == "")
+
+    assert "__others__ambiente" in out["labels"]
+    assert root_total == pytest.approx(1.0)
+    i = out["labels"].index("a1")
+    assert out["values_m"][i] / out["values_s"][i] == pytest.approx(1.25)
+
+
+def test_diagnosis_table_prints_the_bucket_line(capsys):
+    """The `→ others` line read spend_report, which never gains an __others__
+    row, so it never printed."""
+    from config import DeepDiveConfig
+    from diagnostics import run_diagnostics
+    from extraction import UpgradeResult
+
+    idx = pd.date_range("2023-01-02", periods=52, freq="W-MON")
+    rng = np.random.default_rng(0)
+    pfx = "$metric:m$category:cat:"
+    v = [pfx + "big1", pfx + "big2", pfx + "small1", pfx + "small2"]
+    spend = pd.DataFrame(
+        {v[0]: rng.random(52) * 10000, v[1]: rng.random(52) * 10000,
+         v[2]: rng.random(52) * 40, v[3]: rng.random(52) * 40},
+        index=idx,
+    )
+    contrib = spend.copy()
+    contrib["total"] = rng.random(52) * 100
+    up = UpgradeResult(model=None, contrib_df=contrib, spend_df=spend,
+                       mmm_config={}, y_hat=None)
+
+    run_diagnostics(
+        DeepDiveConfig(dims=["dim1"], vars_per_dim={"dim1": v}, media_var="total",
+                       share_likelihood_metric="m", auxiliary_metric="m"),
+        up,
+    )
+    out = capsys.readouterr().out
+    assert "→ __others__" in out
+    assert "'Others' groups: 1" in out      # the summary counter was always 0
+
+
+def test_others_active_weeks_is_the_union_not_the_max():
+    """Members are bucketed for being sparse, so their active weeks are usually
+    disjoint; a max reads as 'this bucket barely ran'."""
+    from report import _others_active_weeks
+
+    class _Diag:
+        bucketed_raw = {
+            "Praca": pd.DataFrame({
+                "date": pd.to_datetime(
+                    ["2023-01-02"] * 2 + ["2023-01-09"] * 2 + ["2023-01-16"] * 2
+                ),
+                "variable": ["a", "b"] * 3,
+                "investment": [10.0, 0.0, 0.0, 10.0, 10.0, 0.0],
+            })
+        }
+
+    base = pd.DataFrame({"active_weeks": [2, 1]})
+    assert _others_active_weeks(_Diag(), "Praca", base) == 3   # union, not max=2

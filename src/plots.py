@@ -754,6 +754,19 @@ def _groups_sunburst(
                 node_s[prefix] = node_s.get(prefix, 0.0) + ss
                 node_parent[prefix] = parent
 
+    # A leaf belonging to no declared group would just vanish, and
+    # `__others__<dim>` never appears in the spec's `grupos:` by construction.
+    # Dropping it shrinks the root total, so every "percent root" and every
+    # ROAS colour ends up renormalised against the wrong base.
+    placed = {m for g in groups_spec.values() for m in g.get(members_key, [])}
+    for member, sm in leaf_m.items():
+        if member in placed:
+            continue
+        mpath = (member,)
+        node_m[mpath] = node_m.get(mpath, 0.0) + sm
+        node_s[mpath] = node_s.get(mpath, 0.0) + leaf_s.get(member, 0.0)
+        node_parent[mpath] = ()
+
     ids, labels, parents, vals_m, vals_s = [], [], [], [], []
     for path, sm in node_m.items():
         node_id = "/".join(str(p) for p in path)

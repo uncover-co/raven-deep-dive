@@ -240,7 +240,7 @@ def run_diagnostics(
     upgrade.spend_df = df
 
     spend_report = pd.DataFrame(rows)
-    _print_diagnosis(spend_report, min_spend_share, hhi_threshold, len(bucketed))
+    _print_diagnosis(spend_report, min_spend_share, hhi_threshold, len(bucketed), bucketed)
     _print_model_composition(
         new_vars_per_dim, new_lower_funnel_vars_per_dim, bucketed, bucket_notes,
         bucket_info,
@@ -377,7 +377,11 @@ def _slug_label(slug: str) -> str:
 
 
 def _print_diagnosis(
-    diag_df: pd.DataFrame, min_pct: float, hhi_threshold: float, n_others: int = 0
+    diag_df: pd.DataFrame,
+    min_pct: float,
+    hhi_threshold: float,
+    n_others: int = 0,
+    bucketed: dict[str, list[str]] | None = None,
 ) -> None:
     w = 75
     print("─" * w)
@@ -401,9 +405,13 @@ def _print_diagnosis(
             for _, row in main[~main["keep"]].iterrows():
                 label = _slug_label(row["slug"])
                 print(f"       ↳ {label:<24}  {row['pct_gate_dim']:>6.1%}  {row['reason']}")
-            others_rows = main[main["slug"].str.startswith("__others__") & main["keep"]]
-            for _, row in others_rows.iterrows():
-                print(f"       → {'others':<24}  {row['pct_gate_dim']:>6.1%}  {row['reason']}")
+            # From `bucketed`: spend_report only ever gets one row per
+            # original slug, so looking for an __others__ row here never matched.
+            members = (bucketed or {}).get(dim)
+            if members:
+                pct = float(main[~main["keep"]]["pct_gate_dim"].sum())
+                print(f"       → {'__others__':<24}  {pct:>6.1%}  "
+                      f"aggregates {len(members)} breakdown(s)")
         for _, row in info.iterrows():
             label = _slug_label(row["slug"])
             print(f"       ·  {label:<24}  {row['reason']}")
