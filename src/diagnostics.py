@@ -4,9 +4,6 @@ import re
 import pandas as pd
 
 
-_ABS_MIN_WEEKS = 2
-
-
 def sanitize_dim_name(name: str) -> str:
     """Slugify a dimension name for use as a DataFrame column or filename."""
     return re.sub(r"[^\w-]", "", name.lower().replace(" ", "-"))
@@ -29,6 +26,7 @@ def run_diagnostics(
     upgrade: UpgradeResult,
     min_spend_share: float | None = None,
     hhi_threshold: float | None = None,
+    min_active_weeks: int | None = None,
     min_active_weeks_frac: float | None = None,
 ) -> tuple[DeepDiveConfig, DiagnosisResult]:
     """Filter config vars by spend structure; bucket tiny vars into __others__.
@@ -39,6 +37,7 @@ def run_diagnostics(
     """
     min_spend_share = min_spend_share if min_spend_share is not None else config.min_spend_share
     hhi_threshold = hhi_threshold if hhi_threshold is not None else config.hhi_threshold
+    min_active_weeks = min_active_weeks if min_active_weeks is not None else config.min_active_weeks
     min_active_weeks_frac = (
         min_active_weeks_frac if min_active_weeks_frac is not None else config.min_active_weeks_frac
     )
@@ -64,10 +63,10 @@ def run_diagnostics(
     # see README Sec. 8 for why this is a known, accepted limitation.
     new_lower_funnel_vars_per_dim = {k: list(v) for k, v in config.lower_funnel_vars_per_dim.items()}
     n_weeks = len(df)
-    # Relative floor, so the bar scales with the modelling window. _ABS_MIN_WEEKS
-    # is a guard, not a knob: below 2 active weeks a Hill curve has nothing to
+    # Relative floor, so the bar scales with the modelling window. min_active_weeks
+    # is a guard, not just a knob: below 2 active weeks a Hill curve has nothing to
     # fit, and 5% of a short series can round down to 1.
-    effective_min_weeks = max(_ABS_MIN_WEEKS, round(min_active_weeks_frac * n_weeks))
+    effective_min_weeks = max(min_active_weeks, round(min_active_weeks_frac * n_weeks))
 
     spend_metric = config.spend_metric
     metric_prefix = f"$metric:{spend_metric}$"
@@ -254,6 +253,7 @@ def run_diagnostics(
         num_steps=config.num_steps,
         min_spend_share=min_spend_share,
         hhi_threshold=hhi_threshold,
+        min_active_weeks=min_active_weeks,
         min_active_weeks_frac=min_active_weeks_frac,
         vehicle_spec=config.vehicle_spec,
         lower_funnel_vars_per_dim=new_lower_funnel_vars_per_dim,
