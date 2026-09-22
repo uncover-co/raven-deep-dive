@@ -96,13 +96,29 @@ def _load_from_parquets(
     contrib_df.index = pd.DatetimeIndex(contrib_df.index).normalize()
     contrib_df.index.name = None
 
-    # Meridian export_data may include 1 extra forecast week at the end — trim it.
+    # export_data may carry 1 week input_data doesn't have: a trailing forecast
+    # week in Meridian, a leading partial week in Raven. Drop it by date -- a
+    # positional trim silently shifts the whole series when it sits at the
+    # other end.
     inp = pd.read_parquet(input_path)
     if "timestamp" in inp.columns:
         inp = inp.sort_values("timestamp")
     n_inp, n_contrib = len(inp), len(contrib_df)
     if n_contrib == n_inp + 1:
-        contrib_df = contrib_df.iloc[:n_inp]
+        extra = None
+        if "timestamp" in inp.columns:
+            inp_weeks = pd.DatetimeIndex(
+                pd.to_datetime(inp["timestamp"]).dt.to_period("W-MON").dt.start_time
+            ).normalize().unique()
+            extra = contrib_df.index.difference(inp_weeks)
+        if extra is None or len(extra) != 1:
+            found = [] if extra is None else [str(d.date()) for d in extra]
+            raise ValueError(
+                f"input_data has {n_inp} rows and contrib_df has {n_contrib}, but the "
+                f"extra week could not be identified by date (got {found}). "
+                "Trimming by position would shift the series."
+            )
+        contrib_df = contrib_df.drop(index=extra)
     elif n_contrib != n_inp:
         raise ValueError(
             f"input_data has {n_inp} rows but contrib_df has {n_contrib}. "

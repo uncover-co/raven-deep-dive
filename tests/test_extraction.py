@@ -180,3 +180,77 @@ def test_download_export_input_parquets_partial_cache_redownloads_both():
         assert export_path == os.path.join(run_dir, "export_data.parquet")
         assert input_path == os.path.join(run_dir, "input_data.parquet")
         assert os.path.exists(input_path)
+
+
+def _run_loader(export_df, input_df, loader):
+    with tempfile.TemporaryDirectory() as tmp:
+        export_path = os.path.join(tmp, "export_data.parquet")
+        input_path = os.path.join(tmp, "input_data.parquet")
+        export_df.to_parquet(export_path, index=False)
+        input_df.to_parquet(input_path, index=False)
+
+        fake_run = MagicMock()
+        fake_run.data.params = {"media_features": "chan_a", "target": "kpi"}
+        mock_client = MagicMock()
+        mock_client.return_value.download_artifacts.side_effect = [export_path, input_path]
+        mock_client.return_value.get_run.return_value = fake_run
+
+        with patch("mlflow.tracking.MlflowClient", mock_client):
+            return loader("fake-run-id", tracking_uri="http://fake")
+
+
+def _export(weeks, values):
+    return pd.DataFrame([
+        {"timestamp": ts, "variable_name": "chan_a", "value": v,
+         "metric_type": "Contribution Unadstocked"}
+        for ts, v in zip(weeks, values)
+    ])
+
+
+def test_extra_leading_week_is_dropped_not_the_last_real_one():
+    """Raven's stray week leads. A positional trim kept it and dropped the last
+    real week, shifting contribution against spend by a whole week."""
+    from extraction import load_raven_upgrade
+
+    weeks = pd.date_range("2022-12-26", periods=4, freq="W-MON")
+    result = _run_loader(
+        _export(weeks, [999.0, 10.0, 20.0, 30.0]),
+        pd.DataFrame({"timestamp": weeks[1:], "kpi": [1.0, 2.0, 3.0]}),
+        load_raven_upgrade,
+    )
+
+    assert list(result.contrib_df["chan_a"]) == [10.0, 20.0, 30.0]
+    kept = pd.DatetimeIndex(weeks[1:]).to_period("W-MON").start_time.normalize()
+    assert list(result.contrib_df.index) == list(kept)
+
+
+def test_extra_trailing_week_is_still_dropped():
+    from extraction import load_meridian_upgrade
+
+    weeks = pd.date_range("2023-01-02", periods=4, freq="W-MON")
+    export = pd.DataFrame([
+        {"timestamp": ts, "variable_name": "chan_a", "value": v,
+         "metric_type": "Contribution"}
+        for ts, v in zip(weeks, [10.0, 20.0, 30.0, 999.0])
+    ])
+    result = _run_loader(
+        export,
+        pd.DataFrame({"timestamp": weeks[:3], "kpi": [1.0, 2.0, 3.0]}),
+        load_meridian_upgrade,
+    )
+
+    assert list(result.contrib_df["chan_a"]) == [10.0, 20.0, 30.0]
+
+
+def test_ambiguous_extra_week_raises_instead_of_guessing():
+    from extraction import load_raven_upgrade
+
+    weeks = pd.date_range("2023-01-02", periods=4, freq="W-MON")
+    off = pd.Timestamp("2024-06-03")
+    with pytest.raises(ValueError, match="could not be identified by date"):
+        _run_loader(
+            _export(weeks, [10.0, 20.0, 30.0, 40.0]),
+            pd.DataFrame({"timestamp": [weeks[0], weeks[1], off],
+                          "kpi": [1.0, 2.0, 3.0]}),
+            load_raven_upgrade,
+        )
