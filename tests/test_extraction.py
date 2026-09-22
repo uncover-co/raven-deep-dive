@@ -208,8 +208,10 @@ def _export(weeks, values):
 
 
 def test_extra_leading_week_is_dropped_not_the_last_real_one():
-    """Raven's stray week leads. A positional trim kept it and dropped the last
-    real week, shifting contribution against spend by a whole week."""
+    """The extra week can sit at either end -- run 0fad79f9 (raven) has it
+    trailing, and the original raven loader's comment described a stray leading
+    day. Trimming by position keeps whichever end it assumed and drops a real
+    week at the other, shifting contribution against spend."""
     from extraction import load_raven_upgrade
 
     weeks = pd.date_range("2022-12-26", periods=4, freq="W-MON")
@@ -225,6 +227,7 @@ def test_extra_leading_week_is_dropped_not_the_last_real_one():
 
 
 def test_extra_trailing_week_is_still_dropped():
+    """Meridian's forecast week and, in practice, raven's extra week too."""
     from extraction import load_meridian_upgrade
 
     weeks = pd.date_range("2023-01-02", periods=4, freq="W-MON")
@@ -240,6 +243,22 @@ def test_extra_trailing_week_is_still_dropped():
     )
 
     assert list(result.contrib_df["chan_a"]) == [10.0, 20.0, 30.0]
+
+
+def test_raven_extra_trailing_week_matches_the_real_run():
+    """What run 0fad79f9 actually looks like: 114 contrib weeks, 113 input
+    rows, the odd one at the end."""
+    from extraction import load_raven_upgrade
+
+    weeks = pd.date_range("2024-06-24", periods=4, freq="W-MON")
+    result = _run_loader(
+        _export(weeks, [10.0, 20.0, 30.0, 999.0]),
+        pd.DataFrame({"timestamp": weeks[:3], "kpi": [1.0, 2.0, 3.0]}),
+        load_raven_upgrade,
+    )
+
+    assert list(result.contrib_df["chan_a"]) == [10.0, 20.0, 30.0]
+    assert len(result.contrib_df) == len(result.input_df)
 
 
 def test_ambiguous_extra_week_raises_instead_of_guessing():

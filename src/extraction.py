@@ -96,10 +96,11 @@ def _load_from_parquets(
     contrib_df.index = pd.DatetimeIndex(contrib_df.index).normalize()
     contrib_df.index.name = None
 
-    # export_data may carry 1 week input_data doesn't have: a trailing forecast
-    # week in Meridian, a leading partial week in Raven. Drop it by date -- a
-    # positional trim silently shifts the whole series when it sits at the
-    # other end.
+    # export_data may carry 1 week input_data doesn't have -- a Meridian
+    # forecast week, or a partial week from daily-logged contributions. Which
+    # end it lands on is not fixed: raven run 0fad79f9 has it trailing, while
+    # the old raven loader was written against a stray leading day. Drop it by
+    # date; a positional trim shifts the whole series when it guesses wrong.
     inp = pd.read_parquet(input_path)
     if "timestamp" in inp.columns:
         inp = inp.sort_values("timestamp")
