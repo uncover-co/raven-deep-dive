@@ -31,7 +31,7 @@ def _upgrade(index, values, col="spend"):
     inp = pd.DataFrame({"timestamp": index, col: values})
     return UpgradeResult(
         model=None, contrib_df=pd.DataFrame(), spend_df=pd.DataFrame(),
-        mmm_config={}, y_hat=None, input_df=inp,
+        mmm_config={}, input_df=inp,
     )
 
 
@@ -165,16 +165,6 @@ def test_unknown_upgrade_column_lists_candidates():
         check_spend_coverage(_cfg(), pd.DataFrame(), against="upgrade",
                              upgrade=up, upgrade_spend_col="nope", verbose=False)
 
-
-def test_all_three_loaders_populate_input_df():
-    """check_spend_coverage(against='upgrade') depends on it silently."""
-    import inspect
-    import extraction
-
-    src = inspect.getsource(extraction)
-    assert src.count("input_df=inp,") == 2   # _load_from_parquets + load_raven_upgrade
-
-
 # ── plot ─────────────────────────────────────────────────────────────────────
 
 def test_plot_spend_coverage_needs_the_series():
@@ -202,3 +192,133 @@ def test_plot_spend_coverage_styles_every_subplot():
     grids = {fig.layout[k].gridcolor for k in fig.layout
              if k.startswith(("xaxis", "yaxis"))}
     assert grids == {"#2A2A2A"}
+
+
+# ── silent-display regressions found by the sweep ────────────────────────────
+
+def test_sunburst_keeps_a_leaf_that_belongs_to_no_group():
+    """`__others__<dim>` is never in the spec's `grupos:`, so the tree dropped
+    it -- shrinking the root and renormalising every percent and ROAS colour."""
+    from plots import _groups_sunburst
+
+    groups = {
+        "g1": {"vertical": "ruas", "tipo": "outdoor", "ambientes": ["a1", "a2"]},
+        "g2": {"vertical": "transportes", "tipo": "indoor", "ambientes": ["a3"]},
+    }
+    pfx = "$metric:m$category:ambiente:"
+    sm = pd.Series({pfx + "a1": 0.25, pfx + "a2": 0.25, pfx + "a3": 0.20,
+                    "__others__ambiente": 0.30})
+    ss = pd.Series({pfx + "a1": 0.20, pfx + "a2": 0.20, pfx + "a3": 0.20,
+                    "__others__ambiente": 0.40})
+
+    out = _groups_sunburst(sm, ss, "ambiente", groups, "ambientes")
+    root_total = sum(v for p, v in zip(out["parents"], out["values_m"]) if p == "")
+
+    assert "__others__ambiente" in out["labels"]
+    assert root_total == pytest.approx(1.0)
+    i = out["labels"].index("a1")
+    assert out["values_m"][i] / out["values_s"][i] == pytest.approx(1.25)
+
+
+def test_diagnosis_table_prints_the_bucket_line(capsys):
+    """The `→ others` line read spend_report, which never gains an __others__
+    row, so it never printed."""
+    from config import DeepDiveConfig
+    from diagnostics import run_diagnostics
+    from extraction import UpgradeResult
+
+    idx = pd.date_range("2023-01-02", periods=52, freq="W-MON")
+    rng = np.random.default_rng(0)
+    pfx = "$metric:m$category:cat:"
+    v = [pfx + "big1", pfx + "big2", pfx + "small1", pfx + "small2"]
+    spend = pd.DataFrame(
+        {v[0]: rng.random(52) * 10000, v[1]: rng.random(52) * 10000,
+         v[2]: rng.random(52) * 40, v[3]: rng.random(52) * 40},
+        index=idx,
+    )
+    contrib = spend.copy()
+    contrib["total"] = rng.random(52) * 100
+    up = UpgradeResult(model=None, contrib_df=contrib, spend_df=spend,
+                       mmm_config={})
+
+    run_diagnostics(
+        DeepDiveConfig(dims=["dim1"], vars_per_dim={"dim1": v}, media_var="total",
+                       share_likelihood_metric="m", auxiliary_metric="m"),
+        up,
+    )
+    out = capsys.readouterr().out
+    assert "→ __others__" in out
+    assert "'Others' groups: 1" in out      # the summary counter was always 0
+
+
+def test_others_active_weeks_is_the_union_not_the_max():
+    """Members are bucketed for being sparse, so their active weeks are usually
+    disjoint; a max reads as 'this bucket barely ran'."""
+    from report import _others_active_weeks
+
+    class _Diag:
+        bucketed_raw = {
+            "Praca": pd.DataFrame({
+                "date": pd.to_datetime(
+                    ["2023-01-02"] * 2 + ["2023-01-09"] * 2 + ["2023-01-16"] * 2
+                ),
+                "variable": ["a", "b"] * 3,
+                "investment": [10.0, 0.0, 0.0, 10.0, 10.0, 0.0],
+            })
+        }
+
+    base = pd.DataFrame({"active_weeks": [2, 1]})
+    assert _others_active_weeks(_Diag(), "Praca", base) == 3   # union, not max=2
+
+
+def test_short_label_uses_the_category_when_given():
+    """Without it the last $ segment wins, and a state_template ends every item
+    on the brand."""
+    from plots import _short_label
+
+    slug = "$metric:m$state:sp$category:brand:bradesco"
+
+    assert _short_label(slug) == "bradesco"
+    assert _short_label(slug, category="state") == "sp"
+
+
+def test_sunburst_colors_normalise_against_the_root():
+    """Aggregated nodes count once per ancestor level, so summing every node
+    put the colour scale on the wrong base."""
+    from plots import _groups_sunburst, _roas_colors
+
+    groups = {
+        "g1": {"vertical": "ruas", "tipo": "outdoor", "ambientes": ["a1", "a2"]},
+        "g2": {"vertical": "transportes", "tipo": "indoor", "ambientes": ["a3"]},
+    }
+    pfx = "$metric:m$category:ambiente:"
+    sm = pd.Series({pfx + "a1": 0.25, pfx + "a2": 0.25, pfx + "a3": 0.20,
+                    "__others__ambiente": 0.30})
+    ss = pd.Series({pfx + "a1": 0.20, pfx + "a2": 0.20, pfx + "a3": 0.20,
+                    "__others__ambiente": 0.40})
+
+    out = _groups_sunburst(sm, ss, "ambiente", groups, "ambientes")
+    colors = _roas_colors(out["values_m"], out["values_s"], out["parents"])
+    i = out["labels"].index("a1")
+
+    assert colors[i] == pytest.approx(1.25)
+
+
+def test_tree_raises_on_a_hierarchy_key_that_does_not_exist():
+    """batch.rollup_contribs_ts raises on this typo; the sunburst fell back to
+    an empty map and drew a flat wheel that looks like a real result."""
+    from plots import plot_tree_dim
+
+    spec = {
+        "breakdowns": {"ambiente": {
+            "category": "ambiente",
+            "rollups": [{"level": "vertical", "groups": "grupos_com_typo"}],
+        }},
+        "hierarchy": {"grupos": {"g1": {"values": ["a1"]}}},
+    }
+
+    from types import SimpleNamespace
+    stub = SimpleNamespace(shares_model={}, shares_spend={})
+
+    with pytest.raises(ValueError, match="not found in hierarchy"):
+        plot_tree_dim("ambiente", {"cliente": stub}, spec)

@@ -447,7 +447,14 @@ def rollup_contribs_ts(
     for rspec in rollup_specs:
         level = rspec["level"]
         if "map" in rspec:
-            flat_map = hierarchy.get(rspec["map"], {})
+            if rspec["map"] not in hierarchy:
+                raise ValueError(
+                    f"Rollup '{level}' references map '{rspec['map']}' not found in "
+                    f"hierarchy. Available: {list(hierarchy.keys())}. (Falling back "
+                    f"to an empty map would make this level an identity rollup -- "
+                    f"aggregated in name only.)"
+                )
+            flat_map = hierarchy[rspec["map"]]
 
             def _pf(slug: str, _m: dict = flat_map) -> str:
                 v = _value(slug)
@@ -455,7 +462,12 @@ def rollup_contribs_ts(
 
             out[level] = _group_and_sum(_pf)
         elif "groups" in rspec:
-            groups_spec = hierarchy.get(rspec["groups"], {})
+            if rspec["groups"] not in hierarchy:
+                raise ValueError(
+                    f"Rollup '{level}' references groups '{rspec['groups']}' not "
+                    f"found in hierarchy. Available: {list(hierarchy.keys())}."
+                )
+            groups_spec = hierarchy[rspec["groups"]]
             members_key = rspec.get("members_key", "values")
             attr = rspec.get("attr")
             member_to_key: dict[str, str] = {}

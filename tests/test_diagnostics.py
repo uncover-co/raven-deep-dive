@@ -32,7 +32,6 @@ def _make_fixtures():
         contrib_df=contrib_df,
         spend_df=spend,
         mmm_config={},
-        y_hat=eletro,
     )
     return cfg, upgrade
 
@@ -122,7 +121,6 @@ def test_single_excluded_var_not_bucketed():
         contrib_df=contrib_df,
         spend_df=spend,
         mmm_config={},
-        y_hat=eletro,
     )
     new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
     praca_vars = new_cfg.vars_per_dim.get("Praca", [])
@@ -164,7 +162,7 @@ def test_slug_without_primary_column_excluded_even_if_aux_available():
     eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
     contrib_df = spend.copy()
     contrib_df["eletro_total"] = eletro
-    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={}, y_hat=eletro)
+    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={})
 
     new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
     ghost_slug = "$metric:invest$category:praca:ghost"

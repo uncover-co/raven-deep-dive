@@ -27,7 +27,6 @@ def _fixtures():
         contrib_df=contrib.to_frame(),
         spend_df=spend,
         mmm_config={},
-        y_hat=contrib,
     )
     return cfg, upgrade
 

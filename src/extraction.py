@@ -17,9 +17,7 @@ class UpgradeResult:
     contrib_df: pd.DataFrame        # all channel contributions, index=timestamp
     spend_df: pd.DataFrame          # breakdown-level spend (populated by load_breakdown_spend)
     mmm_config: dict                # {media_features, control_features, target, ...}
-    y_hat: pd.Series                # fitted KPI values (sum of contribs)
     model_type: ModelType = "stan"  # "stan" | "meridian" | "raven"
-    y_actual: pd.Series | None = None  # observed KPI
     input_df: pd.DataFrame | None = None  # raw input_data.parquet (main model's own features)
 
 
@@ -98,26 +96,35 @@ def _load_from_parquets(
     contrib_df.index = pd.DatetimeIndex(contrib_df.index).normalize()
     contrib_df.index.name = None
 
-    # y_hat = sum of all contributions, including $metric:intercept
-    y_hat = contrib_df.sum(axis=1).rename(None)
-
-    # y_actual: positional alignment avoids timezone bucketing mismatches.
-    # Meridian export_data may include 1 extra forecast week at the end — trim it.
+    # export_data may carry 1 week input_data doesn't have -- a Meridian
+    # forecast week, or a partial week from daily-logged contributions. Which
+    # end it lands on is not fixed: raven run 0fad79f9 has it trailing, while
+    # the old raven loader was written against a stray leading day. Drop it by
+    # date; a positional trim shifts the whole series when it guesses wrong.
     inp = pd.read_parquet(input_path)
     if "timestamp" in inp.columns:
         inp = inp.sort_values("timestamp")
-    kpi_values = inp.iloc[:, -1].values
-    n_inp, n_contrib = len(kpi_values), len(contrib_df)
+    n_inp, n_contrib = len(inp), len(contrib_df)
     if n_contrib == n_inp + 1:
-        contrib_df = contrib_df.iloc[:n_inp]
-        y_hat = contrib_df.sum(axis=1).rename(None)
+        extra = None
+        if "timestamp" in inp.columns:
+            inp_weeks = pd.DatetimeIndex(
+                pd.to_datetime(inp["timestamp"]).dt.to_period("W-MON").dt.start_time
+            ).normalize().unique()
+            extra = contrib_df.index.difference(inp_weeks)
+        if extra is None or len(extra) != 1:
+            found = [] if extra is None else [str(d.date()) for d in extra]
+            raise ValueError(
+                f"input_data has {n_inp} rows and contrib_df has {n_contrib}, but the "
+                f"extra week could not be identified by date (got {found}). "
+                "Trimming by position would shift the series."
+            )
+        contrib_df = contrib_df.drop(index=extra)
     elif n_contrib != n_inp:
         raise ValueError(
             f"input_data has {n_inp} rows but contrib_df has {n_contrib}. "
             "Positional alignment requires the same number of weeks (tolerance: +1)."
         )
-    y_actual = pd.Series(kpi_values, index=contrib_df.index, name=None)
-
     mmm_config = dict(client.get_run(run_id).data.params)
 
     return UpgradeResult(
@@ -125,9 +132,7 @@ def _load_from_parquets(
         contrib_df=contrib_df,
         spend_df=pd.DataFrame(),
         mmm_config=mmm_config,
-        y_hat=y_hat,
         model_type=model_type,
-        y_actual=y_actual,
         input_df=inp,
     )
 
@@ -174,87 +179,21 @@ def load_raven_upgrade(
 ) -> UpgradeResult:
     """Load a Raven (mmmverse/prophetverse) upgrade run from MLflow.
 
+    Same contract as the Stan loader, and the same metric_type: the Deep Dive
+    decomposes the model's own target, so the `Efficiency Scaler` that Raven
+    also logs must NOT be applied here -- it converts a non-financial target
+    into a financial one to produce ROI, which is a separate transformation
+    the DS applies afterwards if they want it.
+
     Note: the artifact store backing some Raven runs may require AWS SSO
     (`aws sso login`) rather than the static keys used for Stan/Meridian.
     """
-    export_path, input_path, client = _download_export_input_parquets(
-        run_id, tracking_uri, cache_dir
-    )
-
-    export = pd.read_parquet(export_path)
-    inp = pd.read_parquet(input_path)
-    if "timestamp" in inp.columns:
-        inp = inp.sort_values("timestamp")
-
-    def _weekly(metric_type: str, agg: str) -> pd.DataFrame:
-        rows = export[export["metric_type"] == metric_type].copy()
-        rows["timestamp"] = pd.to_datetime(rows["timestamp"]).dt.to_period("W-MON").dt.start_time
-        df = rows.groupby(["timestamp", "variable_name"])["value"].agg(agg).unstack("variable_name")
-        df.index = pd.DatetimeIndex(df.index).normalize()
-        df.index.name = None
-        return df
-
-    contrib_raw = _weekly("Contribution Unadstocked", "sum").fillna(0.0)
-    eff_scaler = _weekly("Efficiency Scaler", "mean")["efficiency_scaler"]
-
-    # `Contribution Unadstocked` is logged daily and can include a stray
-    # leading day that buckets into an extra partial week not present in
-    # `Efficiency Scaler` (logged already weekly) — e.g. one December day
-    # rolling into a "W-MON" period bucket before the real data starts.
-    # Align the two to each other (both went through the same `_weekly`
-    # bucketing, so their index labels are mutually consistent even though
-    # — like `_load_from_parquets` — that bucketing lands 1 day off from
-    # input_data.parquet's own timestamps; don't compare labels against
-    # `inp` directly).
-    extra_weeks = contrib_raw.index.difference(eff_scaler.index)
-    if len(extra_weeks) > 0:
-        contrib_raw = contrib_raw.drop(index=extra_weeks)
-    missing_weeks = eff_scaler.index.difference(contrib_raw.index)
-    if len(missing_weeks) > 0:
-        raise ValueError(
-            f"run {run_id}: 'Efficiency Scaler' has weeks {list(missing_weeks)} "
-            "with no matching 'Contribution Unadstocked' data."
-        )
-
-    contrib_df = contrib_raw.mul(eff_scaler.reindex(contrib_raw.index), axis=0)
-    y_hat = contrib_df.sum(axis=1).rename(None)
-
-    n_inp, n_contrib = len(inp), len(contrib_df)
-    if n_contrib == n_inp + 1:
-        contrib_df = contrib_df.iloc[1:]
-        y_hat = contrib_df.sum(axis=1).rename(None)
-    elif n_contrib != n_inp:
-        raise ValueError(
-            f"input_data has {n_inp} rows but contrib_df has {n_contrib} after aligning "
-            "to Efficiency Scaler. Positional alignment requires the same number of "
-            "weeks (tolerance: +1)."
-        )
-
-    target_rows = export[export["metric_type"] == "Target Prediction"]
-    if target_rows.empty:
-        raise ValueError(
-            f"No 'Target Prediction' rows in export_data.parquet for run {run_id} — "
-            "cannot resolve the KPI column name in input_data.parquet."
-        )
-    target_var = target_rows["variable_name"].iloc[0]
-    if target_var not in inp.columns:
-        raise ValueError(
-            f"Target variable '{target_var}' (from 'Target Prediction' in export_data.parquet) "
-            f"not found in input_data.parquet columns for run {run_id}."
-        )
-    y_actual = pd.Series(inp[target_var].values, index=contrib_df.index, name=None)
-
-    mmm_config = dict(client.get_run(run_id).data.params)
-
-    return UpgradeResult(
-        model=None,
-        contrib_df=contrib_df,
-        spend_df=pd.DataFrame(),
-        mmm_config=mmm_config,
-        y_hat=y_hat,
+    return _load_from_parquets(
+        run_id,
+        tracking_uri=tracking_uri,
+        cache_dir=cache_dir,
+        contribution_metric_type="Contribution Unadstocked",
         model_type="raven",
-        y_actual=y_actual,
-        input_df=inp,
     )
 
 

@@ -69,7 +69,7 @@ def test_run_diagnostics_preserves_lower_funnel_vars_per_dim():
     )
     contrib_df = spend.copy()
     contrib_df["total"] = rng.random(52) * 100
-    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={}, y_hat=None)
+    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={})
 
     new_cfg, _ = run_diagnostics(cfg, upgrade)
     assert new_cfg.lower_funnel_vars_per_dim == {"dim1": [slug_b]}
@@ -169,8 +169,7 @@ def test_run_deep_dive_lower_funnel_vars_per_dim_end_to_end():
     contrib_df = media_dd_contrib.to_frame(name="media_total")
 
     upgrade = UpgradeResult(
-        model=None, contrib_df=contrib_df, spend_df=spend_df, mmm_config={},
-        y_hat=None, model_type="stan",
+        model=None, contrib_df=contrib_df, spend_df=spend_df, mmm_config={}, model_type="stan",
     )
 
     slugs = list(spend_df.columns)
@@ -213,7 +212,7 @@ def _bucket_fixture():
     contrib = spend.copy()
     contrib["total"] = rng.random(52) * 100
     upgrade = UpgradeResult(
-        model=None, contrib_df=contrib, spend_df=spend, mmm_config={}, y_hat=None
+        model=None, contrib_df=contrib, spend_df=spend, mmm_config={}
     )
     return upgrade, (big1, big2, sm1, sm2)
 
@@ -277,7 +276,7 @@ def test_declared_bucket_that_never_forms_is_a_silent_noop():
     contrib = spend.copy()
     contrib["total"] = rng.random(52) * 100
     upgrade = UpgradeResult(
-        model=None, contrib_df=contrib, spend_df=spend, mmm_config={}, y_hat=None
+        model=None, contrib_df=contrib, spend_df=spend, mmm_config={}
     )
     new_cfg, diag = _run(upgrade, (big1, big2, sm1), {"dim1": ["__others__dim1"]})
 

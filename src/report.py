@@ -5,7 +5,8 @@ import pandas as pd
 
 from diagnostics import DiagnosisResult, sanitize_dim_name
 from pipeline import align_to, extract_hill_params
-from plots import _clean_label, plot_contributions, plot_roas_index, plot_weekly_df
+from plots import (_clean_label, _dim_category, plot_contributions,
+                   plot_roas_index, plot_weekly_df)
 
 
 def generate_report(
@@ -150,6 +151,7 @@ def _build_contributions_df(
 
         anchor_stan = float(align_to(result.media_dd_contrib, c_df.index).sum())
         dim_contrib_total = float(c_df.sum().sum())
+        cat = _dim_category(result, dim)
 
         fr = result.features_raw.get(dim)
         sh_s = result.shares_spend.get(dim, pd.Series(dtype=float))
@@ -166,7 +168,7 @@ def _build_contributions_df(
                 "dim": dim,
                 "level": level,
                 "item": item,
-                "item_label": _clean_label(str(item)),
+                "item_label": _clean_label(str(item), cat),
                 "anchor_stan": anchor_stan,
                 "contrib_absolute": contrib_abs,
                 "pct_anchor": contrib_abs / anchor_stan if anchor_stan > 0 else float("nan"),
@@ -323,7 +325,10 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
             "slug": others_col,
             "status": "others_aggregate",
             "reason": f"aggregates {len(bucketed_slugs)} breakdown(s)",
-            "active_weeks": int(base["active_weeks"].max()) if len(base) else None,
+            # The __others__ column is df[members].sum(axis=1), so it is active
+            # on the UNION of its members' weeks. Members get bucketed precisely
+            # for being sparse, so a max understates the aggregate.
+            "active_weeks": _others_active_weeks(diag, dim, base),
             "gate_total": float(base["gate_total"].sum()) if len(base) else None,
             "pct_gate_dim": float(base["pct_gate_dim"].sum()) if len(base) else None,
             "contrib_total": ct,
@@ -331,3 +336,17 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
         })
 
     return pd.DataFrame(rows)
+
+
+def _others_active_weeks(diag, dim: str, base) -> int | None:
+    """Weeks the __others__ column is actually active: the union over members.
+
+    `diag.bucketed_raw[dim]` keeps each member's pre-aggregation series, so the
+    union is exact. Without it, fall back to the max -- an understatement, but
+    the only thing the summary rows support.
+    """
+    raw = (diag.bucketed_raw or {}).get(dim) if diag is not None else None
+    if raw is not None and not raw.empty:
+        per_week = raw.groupby("date")["investment"].sum()
+        return int((per_week > 0).sum())
+    return int(base["active_weeks"].max()) if len(base) else None
