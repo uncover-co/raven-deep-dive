@@ -443,6 +443,7 @@ def plot_batch_dim(
     """
     clients       = sorted(df_dim["client"].unique())
     rollup_levels = _rollup_order_for_dim(dim, vehicle_spec or {}, df_dim)
+    cat           = _spec_category(vehicle_spec, dim)
 
     n_rows   = len(rollup_levels)
     row_h    = [_row_height(len(df_dim[df_dim["rollup"] == rl]["item"].unique()))
@@ -477,7 +478,7 @@ def plot_batch_dim(
             .sort_values(ascending=True)  # ascending for horizontal bar (bottom=lowest)
             .index.tolist()
         )
-        y_labels = [_short_label(it) for it in item_order]
+        y_labels = [_short_label(it, category=cat) for it in item_order]
 
         for ci, client in enumerate(clients):
             df_c  = df_r[df_r["client"] == client].set_index("item")
@@ -566,6 +567,7 @@ def _print_batch_dim_summary(
 ) -> None:
     """Print tabular summary for one dimension across all clients."""
     rollup_levels = _rollup_order_for_dim(dim, vehicle_spec or {}, df_dim)
+    cat = _spec_category(vehicle_spec, dim)
 
     for rollup in rollup_levels:
         df_r   = df_dim[df_dim["rollup"] == rollup]
@@ -586,7 +588,7 @@ def _print_batch_dim_summary(
         print(f"  {'─'*78}")
 
         for item in items:
-            row_str = f"  {_short_label(item):<28}"
+            row_str = f"  {_short_label(item, category=cat):<28}"
             for c in clients:
                 sub = df_r[(df_r["client"] == c) & (df_r["item"] == item)]
                 if sub.empty:
@@ -650,10 +652,15 @@ def analyze_batch(
 
 # ── Tree (sunburst / treemap) visualization ────────────────────────────────────
 
-def _dim_category(result, dim: str) -> str:
+def _spec_category(vehicle_spec: dict | None, dim: str) -> str:
     """The breakdown's `category`, so labels don't fall back to the last segment."""
-    spec = getattr(getattr(result, "config", None), "vehicle_spec", None) or {}
-    return spec.get("breakdowns", {}).get(dim, {}).get("category", "")
+    return (vehicle_spec or {}).get("breakdowns", {}).get(dim, {}).get("category", "")
+
+
+def _dim_category(result, dim: str) -> str:
+    return _spec_category(
+        getattr(getattr(result, "config", None), "vehicle_spec", None), dim
+    )
 
 
 def _slug_val(slug: str, category: str) -> str:

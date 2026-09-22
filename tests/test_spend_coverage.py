@@ -269,3 +269,14 @@ def test_others_active_weeks_is_the_union_not_the_max():
 
     base = pd.DataFrame({"active_weeks": [2, 1]})
     assert _others_active_weeks(_Diag(), "Praca", base) == 3   # union, not max=2
+
+
+def test_short_label_uses_the_category_when_given():
+    """Without it the last $ segment wins, and a state_template ends every item
+    on the brand."""
+    from plots import _short_label
+
+    slug = "$metric:m$state:sp$category:brand:bradesco"
+
+    assert _short_label(slug) == "bradesco"
+    assert _short_label(slug, category="state") == "sp"

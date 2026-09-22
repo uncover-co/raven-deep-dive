@@ -5,7 +5,8 @@ import pandas as pd
 
 from diagnostics import DiagnosisResult, sanitize_dim_name
 from pipeline import align_to, extract_hill_params
-from plots import _clean_label, plot_contributions, plot_roas_index, plot_weekly_df
+from plots import (_clean_label, _dim_category, plot_contributions,
+                   plot_roas_index, plot_weekly_df)
 
 
 def generate_report(
@@ -150,6 +151,7 @@ def _build_contributions_df(
 
         anchor_stan = float(align_to(result.media_dd_contrib, c_df.index).sum())
         dim_contrib_total = float(c_df.sum().sum())
+        cat = _dim_category(result, dim)
 
         fr = result.features_raw.get(dim)
         sh_s = result.shares_spend.get(dim, pd.Series(dtype=float))
@@ -166,7 +168,7 @@ def _build_contributions_df(
                 "dim": dim,
                 "level": level,
                 "item": item,
-                "item_label": _clean_label(str(item)),
+                "item_label": _clean_label(str(item), cat),
                 "anchor_stan": anchor_stan,
                 "contrib_absolute": contrib_abs,
                 "pct_anchor": contrib_abs / anchor_stan if anchor_stan > 0 else float("nan"),
