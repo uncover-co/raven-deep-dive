@@ -81,7 +81,7 @@ def test_run_diagnostics_preserves_upper_funnel_adstock_effect_per_dim():
         dims=["dim1"],
         vars_per_dim={"dim1": [slug_a, slug_b]},
         media_var="total",
-        share_likelihood_metric="m",
+        vehicle_spec={"default_metric": "m"},
         auxiliary_metric="m",
         upper_funnel_adstock_effect_per_dim={"dim1": marker},
     )
@@ -125,7 +125,7 @@ def test_per_variable_adstock_end_to_end_produces_different_decay():
         dims=["TestDim"],
         vars_per_dim={"TestDim": [slug_v1, slug_v2]},
         media_var="media_total",
-        share_likelihood_metric="invest",
+        vehicle_spec={"default_metric": "invest"},
         auxiliary_metric="invest",
         num_steps=300,
         upper_funnel_adstock_effect_per_dim={

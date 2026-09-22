@@ -63,7 +63,7 @@ def test_run_diagnostics_preserves_lower_funnel_vars_per_dim():
         dims=["dim1"],
         vars_per_dim={"dim1": [slug_a, slug_b]},
         media_var="total",
-        share_likelihood_metric="m",
+        vehicle_spec={"default_metric": "m"},
         auxiliary_metric="m",
         lower_funnel_vars_per_dim={"dim1": [slug_b]},
     )
@@ -222,7 +222,7 @@ def _run(upgrade, slugs, lower):
 
     cfg = DeepDiveConfig(
         dims=["dim1"], vars_per_dim={"dim1": list(slugs)}, media_var="total",
-        share_likelihood_metric="m", auxiliary_metric="m",
+        vehicle_spec={"default_metric": "m"}, auxiliary_metric="m",
         lower_funnel_vars_per_dim=lower,
     )
     return run_diagnostics(cfg, upgrade)
@@ -294,7 +294,7 @@ def _cfg(variables=None):
     variables = variables or [P + "a", P + "b", P + "c", "__others__dim1"]
     return DeepDiveConfig(
         dims=["dim1"], vars_per_dim={"dim1": list(variables)}, media_var="total",
-        share_likelihood_metric="m", auxiliary_metric="m",
+        vehicle_spec={"default_metric": "m"}, auxiliary_metric="m",
     )
 
 

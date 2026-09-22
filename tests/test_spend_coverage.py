@@ -23,7 +23,7 @@ P = "$metric:m$category:cat:"
 def _cfg(vars_=None):
     return DeepDiveConfig(
         dims=["d"], vars_per_dim={"d": vars_ or [P + "a", P + "b"]},
-        media_var="t", share_likelihood_metric="m", auxiliary_metric="m",
+        media_var="t", vehicle_spec={"default_metric": "m"}, auxiliary_metric="m",
     )
 
 
@@ -243,7 +243,7 @@ def test_diagnosis_table_prints_the_bucket_line(capsys):
 
     run_diagnostics(
         DeepDiveConfig(dims=["dim1"], vars_per_dim={"dim1": v}, media_var="total",
-                       share_likelihood_metric="m", auxiliary_metric="m"),
+                       vehicle_spec={"default_metric": "m"}, auxiliary_metric="m"),
         up,
     )
     out = capsys.readouterr().out

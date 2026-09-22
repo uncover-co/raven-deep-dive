@@ -2,7 +2,6 @@ vehicles:
   eletromidia:
     vehicle_slug: eletromidia
     default_metric: investments
-    default_media_metric: investments
 
     # Dimensões que recebem modelo Raven 2 próprio.
     # Estado, Vertical e Tipo são derivados por rollup de Praca e Ambiente.
