@@ -62,6 +62,7 @@ def test_deepdivedconfig_defaults():
     )
     assert cfg.share_prior_scale == 0.05
     assert cfg.num_steps == 30_000
+    assert cfg.min_active_weeks == 2
 
 
 def test_load_yaml_resolves_instance_params_tags_to_real_objects(tmp_path):
