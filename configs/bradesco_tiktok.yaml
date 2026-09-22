@@ -22,7 +22,6 @@ dimensions: null
 # Share likelihood deve usar exposição, não investimento (ver README).
 
 # Sub-canais de resposta imediata (sem adstock), via tiktok.hierarchy.pl4_to_pl1.
-# Validado com dado real (docs/deepdive-funnel-prior-exposure-findings.md).
 lower_funnel_vars_per_dim:
   product_level_4:
     - "$metric:w:investments---tiktok-mmm$category:brand:bradesco$category:product-level-1:tiktok$category:product-level-4:app-retargeting"

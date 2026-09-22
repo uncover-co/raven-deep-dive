@@ -9,7 +9,6 @@ model_type: meridian
 mlflow_tracking_uri: "https://mlflow-datascience.cloud.uncover.co"
 upgrade_run_id: "13b5e6b7239a4442bf08c2979d5eac32"
 
-# Workspace for breakdown spend (mammoth BuildDefaultDataset)
 workspace_dd: "ba---eletromidia---deepdive"
 start_date: "2022-01-01"   # TODO: adjust to actual model window
 end_date:   "2025-08-11"   # TODO: adjust

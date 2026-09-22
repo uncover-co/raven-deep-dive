@@ -11,12 +11,6 @@ vehicles:
       - Praca
       - Midia
       - Modelo de Planejamento
-
-    # Um template só, independente de model_type (stan/meridian) — confirmado
-    # com dado real que a API (Uncover Webserver) parseia os segmentos $key:value
-    # como conjunto não-ordenado, não como string literal, então uma divisão
-    # stan/meridian aqui só reordenava os mesmos segmentos sem mudar o dado
-    # retornado. Use {metric}, {vehicle}, {brand}, {category}, {value}.
     models:
       default_template: "$metric:{metric}$vehicle:{vehicle}$category:brand:{brand}$category:{category}:{value}"
       state_template: "$metric:{metric}$state:{value}$vehicle:{vehicle}$category:brand:{brand}"
@@ -98,9 +92,7 @@ vehicles:
             groups: grupos
             members_key: ambientes
             attr: tipo
-        # Sem override próprio: mesmos segmentos do default_template do
-        # veículo (só "category:ambiente:{value}" com {category} já resolvido
-        # pra "ambiente" — reordenação, não estrutura diferente).
+
         values:
           - abrigos-campinas
           - abrigos-fortaleza

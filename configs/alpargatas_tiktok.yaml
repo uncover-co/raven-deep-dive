@@ -19,10 +19,6 @@ media_var: "tiktok ads"
 
 dimensions: null
 
-# Share likelihood deve usar exposição, não investimento (ver README).
-# Sem isso o MAP dava NaN loss aqui (gate por investimento instabilizava
-# a composição de canais) — validado que resolve.
-
 share_prior_scale: 0.05
 proxy_ct_tolerance: 0.15
 num_steps: 30000
