@@ -22,7 +22,6 @@ class DeepDiveConfig:
     hhi_threshold: float = 0.85
     min_active_weeks_frac: float = 0.05  # semanas ativas mínimas, como fração da série
     model_name: str = ""          # human-readable model identifier (e.g. "Transacoes CC PF - Nacional")
-    share_likelihood_metric: str = ""  # metric slug driving the Hill-curve regressor + diagnostics gate (defaults to investments)
     auxiliary_metric: str = ""    # metric slug used ONLY as CSL prior target + extra diagnostics guardrail (e.g. impressions) — never drives the regressor
     vehicle_spec: dict = field(default_factory=dict)  # full spec from vehicle_specs.yaml
     # {dim_name: [slug, ...]} fit WITHOUT adstock; rest of the dim keeps adstock.
@@ -33,6 +32,17 @@ class DeepDiveConfig:
     # requires every upper-funnel slug present when it's a dict). Missing dim
     # entry = library default for that whole dim.
     upper_funnel_adstock_effect_per_dim: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def spend_metric(self) -> str:
+        """The vehicle's investment metric -- the Hill regressor."""
+        metric = self.vehicle_spec.get("default_metric")
+        if not metric:
+            raise ValueError(
+                "vehicle_spec has no 'default_metric'. It is the investment metric "
+                "every breakdown slug is built from; build_config() always sets it."
+            )
+        return metric
 
 
 def load_yaml(path: str) -> dict:
@@ -77,24 +87,6 @@ def _resolve_metrics(vehicle_spec: dict, auxiliary_metric: str) -> list[str]:
     return [primary]
 
 
-def resolve_share_likelihood_metric(metrics: list[str], override: str | None) -> str:
-    """Pick which fetched metric feeds ContributionShareLikelihood.
-
-    Explicit `override` (client cfg's `share_likelihood_metric`) wins. Otherwise
-    default to the metric that looks like investments — it's always fetched,
-    regardless of vehicle — falling back to the first metric if none matches.
-    """
-    if override:
-        if override not in metrics:
-            raise ValueError(
-                f"share_likelihood_metric override '{override}' is not one of "
-                f"the fetched metrics {metrics} (vehicle's default_metric + "
-                "client's auxiliary_metric)."
-            )
-        return override
-    return next((m for m in metrics if "invest" in m.lower()), metrics[0])
-
-
 def _build_vars_per_dim(
     vehicle_spec: dict, cfg: dict, dims: list[str] | None, metrics: list[str]
 ) -> dict[str, list[str]]:
@@ -104,9 +96,7 @@ def _build_vars_per_dim(
     templates as a placeholder — new per-vehicle template variables need no code change.
 
     metrics: fetched metrics (vehicle's primary + client's auxiliary_metric), from
-    _resolve_metrics(). Passed in rather than recomputed here so build_config()'s
-    single call stays the one source of truth -- see its own call to
-    resolve_share_likelihood_metric() for the other consumer of the same list.
+    _resolve_metrics().
     """
     vehicle_slug = vehicle_spec.get("vehicle_slug", "eletromidia")
     brand = cfg.get("brand", "")
@@ -204,10 +194,6 @@ def build_config(
     vars_per_dim = _build_vars_per_dim(vehicle_spec, cfg, dims_override, metrics)
     dims = list(vars_per_dim.keys())
 
-    share_likelihood_metric = resolve_share_likelihood_metric(
-        metrics, cfg.get("share_likelihood_metric")
-    )
-
     media_var = media_var_override or cfg.get("media_var")
     if not media_var:
         raise ValueError(
@@ -224,7 +210,6 @@ def build_config(
         vehicle=vehicle_key,
         model_type=model_type,
         model_name=cfg.get("model_name", ""),
-        share_likelihood_metric=share_likelihood_metric,
         auxiliary_metric=auxiliary_metric,
         share_prior_scale=cfg.get("share_prior_scale", 0.05),
         proxy_ct_tolerance=cfg.get("proxy_ct_tolerance", 0.15),

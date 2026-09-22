@@ -42,16 +42,11 @@ def run_diagnostics(
     min_active_weeks_frac = (
         min_active_weeks_frac if min_active_weeks_frac is not None else config.min_active_weeks_frac
     )
-    if not config.share_likelihood_metric:
-        raise ValueError(
-            "config.share_likelihood_metric is not set. build_config() always fills this in; "
-            "if you built DeepDiveConfig by hand, pass share_likelihood_metric explicitly."
-        )
     if not config.auxiliary_metric:
         raise ValueError(
             "config.auxiliary_metric is not set. build_config() requires it; if you built "
             "DeepDiveConfig by hand, pass auxiliary_metric explicitly (the same value as "
-            "share_likelihood_metric when the vehicle has no real exposure metric)."
+            "the vehicle's default_metric when it has no real exposure metric)."
         )
 
     df = upgrade.spend_df.copy()
@@ -74,14 +69,13 @@ def run_diagnostics(
     # fit, and 5% of a short series can round down to 1.
     effective_min_weeks = max(_ABS_MIN_WEEKS, round(min_active_weeks_frac * n_weeks))
 
-    # share_likelihood_metric is always the Hill-curve regressor; never changes.
-    share_metric = config.share_likelihood_metric
-    metric_prefix = f"$metric:{share_metric}$"
+    spend_metric = config.spend_metric
+    metric_prefix = f"$metric:{spend_metric}$"
 
     # auxiliary_metric never becomes a regressor -- only decides the gate
     # (concentration/active weeks) and feeds the CSL prior. Always set (see
     # build_config); when the vehicle has no real exposure metric, the DS
-    # points auxiliary_metric to the same value as share_likelihood_metric.
+    # points auxiliary_metric to the same value as the vehicle's default_metric.
     aux_metric = config.auxiliary_metric
     aux_prefix = f"$metric:{aux_metric}$"
     aux_dfs: dict[str, pd.DataFrame] = {}
@@ -119,7 +113,7 @@ def run_diagnostics(
                 f"[{dim}] auxiliary_metric '{aux_metric}' has no real data for this "
                 "dimension -- can't drive the share-likelihood gate. Fix the exposure "
                 "data upstream, or set auxiliary_metric to the same value as "
-                "share_likelihood_metric if this vehicle truly has no exposure metric."
+                "the vehicle's default_metric if it truly has no exposure metric."
             )
 
         # gate_stats decides keep/exclude; kept/excl stay with the investment
@@ -254,7 +248,6 @@ def run_diagnostics(
         vehicle=config.vehicle,
         model_type=config.model_type,
         model_name=config.model_name,
-        share_likelihood_metric=config.share_likelihood_metric,
         auxiliary_metric=config.auxiliary_metric,
         share_prior_scale=config.share_prior_scale,
         proxy_ct_tolerance=config.proxy_ct_tolerance,
@@ -393,7 +386,7 @@ def _print_diagnosis(
         info = grp[grp["rec"] == "INFO"]
         main = grp[grp["rec"] != "INFO"]
         if main.empty:
-            print(f"  [!]  {dim:<26}  no share_likelihood_metric data -- dimension skipped")
+            print(f"  [!]  {dim:<26}  no investment data -- dimension skipped")
         else:
             rec = main["rec"].iloc[0]
             hhi = main["hhi"].iloc[0]
@@ -554,7 +547,7 @@ def check_spend_coverage(
     # vars_per_dim holds the cartesian product metrics x values; only the
     # investment slugs are spend. __others__ columns have no metric prefix but
     # are spend too -- they exist when this runs after run_diagnostics.
-    spend_prefix = f"$metric:{config.share_likelihood_metric}$"
+    spend_prefix = f"$metric:{config.spend_metric}$"
 
     for dim, slugs in config.vars_per_dim.items():
         cols = [
@@ -575,7 +568,7 @@ def check_spend_coverage(
                     raw = _vehicle_level_filter(_get_template(config.vehicle_spec, breakdown))
                     try:
                         filt = raw.format(
-                            metric=config.share_likelihood_metric,
+                            metric=config.spend_metric,
                             vehicle=config.vehicle_spec.get("vehicle_slug", ""),
                             brand=config.brand,
                             category=breakdown.get("category", ""),

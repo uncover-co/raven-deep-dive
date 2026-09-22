@@ -21,7 +21,7 @@ def _make_fixtures():
         dims=["Praca"],
         vars_per_dim={"Praca": list(spend.columns)},
         media_var="eletro_total",
-        share_likelihood_metric="invest",
+        vehicle_spec={"default_metric": "invest"},
         auxiliary_metric="invest",
     )
     eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
@@ -110,7 +110,7 @@ def test_single_excluded_var_not_bucketed():
         dims=["Praca"],
         vars_per_dim={"Praca": list(spend.columns)},
         media_var="eletro_total",
-        share_likelihood_metric="invest",
+        vehicle_spec={"default_metric": "invest"},
         auxiliary_metric="invest",
     )
     eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
@@ -156,7 +156,7 @@ def test_slug_without_primary_column_excluded_even_if_aux_available():
             "$metric:invest$category:praca:ghost",
         ]},
         media_var="eletro_total",
-        share_likelihood_metric="invest",
+        vehicle_spec={"default_metric": "invest"},
         auxiliary_metric="impr",
     )
     eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
