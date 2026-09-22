@@ -21,7 +21,6 @@ dimensions: null
 
 # Share likelihood deve usar exposição, não investimento (ver README).
 # Validado: proxy_ratio/R²/WAPE praticamente iguais ao investimento, sem regressão.
-auxiliary_metric: "w:impressions---tiktok-mmm"
 
 share_prior_scale: 0.05
 proxy_ct_tolerance: 0.15

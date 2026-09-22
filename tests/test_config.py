@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 import sys, os
 import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
@@ -84,3 +85,60 @@ def test_load_yaml_resolves_instance_params_tags_to_real_objects(tmp_path):
     effect = parsed["upper_funnel_adstock_effect_per_dim"]["ProductDim"]["slug_a"]
     assert isinstance(effect, WeibullAdstockEffect)
     assert effect.max_lag == 7
+
+
+def _specs(tmp_path, *, vehicle_aux=None, client_aux=None):
+    vehicle_spec = {
+        "vehicle_slug": "fake",
+        "default_metric": "investments",
+        "models": {"default_template":
+                   "$metric:{metric}$category:brand:{brand}$category:{category}:{value}"},
+        "breakdowns": {"Region": {"category": "region", "values": ["north", "south"]}},
+    }
+    if vehicle_aux is not None:
+        vehicle_spec["auxiliary_metric"] = vehicle_aux
+    specs_path = tmp_path / "vehicle_specs.yaml"
+    specs_path.write_text(yaml.dump({"vehicles": {"fake_vehicle": vehicle_spec}}))
+
+    client = {
+        "brand": "acme", "vehicle": "fake_vehicle",
+        "vehicle_specs_path": specs_path.name,
+        "model_type": "stan", "media_var": "configured-media-var",
+    }
+    if client_aux is not None:
+        client["auxiliary_metric"] = client_aux
+    client_path = tmp_path / "client.yaml"
+    client_path.write_text(yaml.dump(client))
+    return client_path
+
+
+def test_auxiliary_metric_is_inherited_from_the_vehicle(tmp_path):
+    """It describes what the vehicle measures, so it lives on the vehicle and
+    every client of that vehicle gets the same one."""
+    path = _specs(tmp_path, vehicle_aux="impressions")
+    cfg = build_config(_fake_upgrade_for_config(["c"]), specs_path=str(path))
+
+    assert cfg.auxiliary_metric == "impressions"
+
+
+def test_client_auxiliary_metric_wins_and_says_so(tmp_path, capsys):
+    path = _specs(tmp_path, vehicle_aux="impressions", client_aux="reach")
+    cfg = build_config(_fake_upgrade_for_config(["c"]), specs_path=str(path))
+
+    assert cfg.auxiliary_metric == "reach"
+    assert "overridden" in capsys.readouterr().out
+
+
+def test_missing_auxiliary_metric_on_both_sides_raises(tmp_path):
+    path = _specs(tmp_path)
+
+    with pytest.raises(ValueError, match="auxiliary_metric"):
+        build_config(_fake_upgrade_for_config(["c"]), specs_path=str(path))
+
+
+def test_every_vehicle_in_the_repo_declares_an_auxiliary_metric():
+    """A vehicle without it only fails at build_config time, per client."""
+    specs = load_yaml(os.path.join(os.path.dirname(__file__), "../data/vehicle_specs.yaml"))
+    missing = [name for name, v in specs["vehicles"].items() if not v.get("auxiliary_metric")]
+
+    assert not missing, f"sem auxiliary_metric: {missing}"

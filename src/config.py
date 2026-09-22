@@ -181,13 +181,21 @@ def build_config(
         )
     vehicle_spec = vehicle_specs["vehicles"][vehicle_key]
     model_type = cfg.get("model_type", "stan")
-    auxiliary_metric = cfg.get("auxiliary_metric", "")
+    auxiliary_metric = cfg.get("auxiliary_metric") or vehicle_spec.get("auxiliary_metric", "")
     if not auxiliary_metric:
         raise ValueError(
-            f"'auxiliary_metric' not set in {specs_path}. Every Deep Dive needs an "
+            f"'auxiliary_metric' not set for vehicle '{vehicle_key}' in "
+            f"{vehicle_specs_path}, nor in {specs_path}. Every Deep Dive needs an "
             "explicit metric to drive the share-likelihood proxy — set it to a real "
-            "exposure metric (e.g. impressions) when available, or to the same value "
-            "as the investment metric when the vehicle has no exposure metric."
+            "exposure metric (e.g. impressions) when available, or to the vehicle's "
+            "default_metric when it has no exposure metric."
+        )
+
+    client_aux = cfg.get("auxiliary_metric")
+    if client_aux and client_aux != vehicle_spec.get("auxiliary_metric"):
+        print(
+            f"[config] auxiliary_metric overridden for this client: "
+            f"{vehicle_spec.get('auxiliary_metric') or '(none on the vehicle)'} -> {client_aux}"
         )
 
     metrics = _resolve_metrics(vehicle_spec, auxiliary_metric)
