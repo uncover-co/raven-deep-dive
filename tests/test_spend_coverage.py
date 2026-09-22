@@ -95,6 +95,33 @@ def test_gap_is_reported_when_breakdowns_really_are_short():
     assert r["gap_pct"].iloc[0] == pytest.approx(0.2)
 
 
+def test_zero_reference_with_real_spend_is_not_full_coverage(capsys):
+    """gap_pct was 0.0 and corr NaN, so an empty reference passed as perfect
+    coverage with no warning at all."""
+    idx = pd.date_range("2023-01-02", periods=10, freq="W-MON")
+    up = _upgrade(idx, [0.0] * 10)
+    spend = pd.DataFrame({P + "a": [80.0] * 10}, index=idx)
+
+    r = check_spend_coverage(
+        _cfg([P + "a"]), spend, against="upgrade",
+        upgrade=up, upgrade_spend_col="spend", verbose=True,
+    )
+    assert pd.isna(r["gap_pct"].iloc[0])
+    assert "no reference spend" in capsys.readouterr().out
+
+
+def test_zero_on_both_sides_stays_zero():
+    idx = pd.date_range("2023-01-02", periods=10, freq="W-MON")
+    up = _upgrade(idx, [0.0] * 10)
+    spend = pd.DataFrame({P + "a": [0.0] * 10}, index=idx)
+
+    r = check_spend_coverage(
+        _cfg([P + "a"]), spend, against="upgrade",
+        upgrade=up, upgrade_spend_col="spend", verbose=False,
+    )
+    assert r["gap_pct"].iloc[0] == pytest.approx(0.0)
+
+
 def test_others_bucket_counts_as_breakdown_spend():
     """Running after run_diagnostics, the bucket carries real spend; leaving it
     out understated the breakdown sum by the whole bucket."""

@@ -602,13 +602,20 @@ def check_spend_coverage(
             a, b = ref_series.reindex(common), dim_series.reindex(common)
             ref_total, dim_total = float(a.sum()), float(b.sum())
             gap = ref_total - dim_total
+            # No reference at all is not perfect coverage: a 0.0 here read as
+            # "nothing missing", and `corr` is NaN in that case, so nothing
+            # warned. Undefined unless both sides are empty.
+            if ref_total:
+                gap_pct = gap / ref_total
+            else:
+                gap_pct = 0.0 if not dim_total else float("nan")
             rows.append({
                 "dim": dim,
                 "reference": ref,
                 "ref_total": ref_total,
                 "dim_total": dim_total,
                 "gap": gap,
-                "gap_pct": gap / ref_total if ref_total else 0.0,
+                "gap_pct": gap_pct,
                 "weeks_compared": len(common),
                 "corr": float(a.corr(b)) if len(common) > 2 else float("nan"),
                 "max_week_dev_pct": (
@@ -623,7 +630,9 @@ def check_spend_coverage(
     if verbose and not report.empty:
         for _, r in report.iterrows():
             flags = []
-            if abs(r.gap_pct) > tolerance:
+            if pd.isna(r.gap_pct):
+                flags.append("no reference spend, but the breakdowns have some")
+            elif abs(r.gap_pct) > tolerance:
                 flags.append(f"gap {r.gap_pct:.1%}")
             if pd.notna(r["corr"]) and r["corr"] < 0.95:
                 flags.append(f"corr {r['corr']:.2f}")
