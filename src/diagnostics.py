@@ -557,7 +557,7 @@ def check_spend_coverage(
         bucket = f"__others__{sanitize_dim_name(dim)}"
         if bucket in spend_df.columns and bucket not in cols:
             cols.append(bucket)
-        dim_series = _to_weekly(spend_df[cols].sum(axis=1)) if cols else pd.Series(dtype=float)
+        dim_series = _to_weekly(spend_df[cols].sum(axis=1))
 
         for ref in wanted:
             if ref == "workspace":
