@@ -978,7 +978,7 @@ def analyze_trees(
 def plot_spend_coverage(report: pd.DataFrame, title: str = "") -> go.Figure:
     """Overlay the reference spend against the sum of the breakdowns, per dim.
 
-    Takes the report from `extraction.check_spend_coverage()`, which carries
+    Takes the report from `diagnostics.check_spend_coverage()`, which carries
     the series in `report.attrs["series"]`. A gap that is flat across the
     window reads very differently from one concentrated in a few weeks, and
     only the lines show which of the two it is.
