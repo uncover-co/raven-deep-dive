@@ -294,8 +294,7 @@ def _print_model_composition(
     def _label(s: str) -> str:
         if s.startswith("__others__"):
             return s
-        parts = re.findall(r"\$category:[^$:]+:([^$]+)", s)
-        return parts[-1] if parts else s
+        return _slug_label(s, truncate=False)
 
     for dim, slugs in vars_per_dim.items():
         lower = set(lower_per_dim.get(dim, []))
@@ -361,12 +360,24 @@ def _wrap_members(members: list[str], label_fn) -> str:
     )
 
 
-def _slug_label(slug: str) -> str:
+def _slug_label(slug: str, truncate: bool = True) -> str:
     """Extract short human-readable label from a full slug for display."""
-    parts = re.findall(r'\$category:[^$:]+:([^$]+)', slug)
-    if parts:
-        return parts[-1][:24]
-    return slug[:24]
+    # Any $key:value segment can hold the label, not just $category (e.g.
+    # state_template's $state:{value}) -- skip fixed framing/brand, take the
+    # last remaining segment so a new filter type needs no special case.
+    candidates = []
+    for key, val in re.findall(r"\$([a-z_]+):([^$]+)", slug):
+        if key in ("metric", "vehicle"):
+            continue
+        if key == "category":
+            cat, _, v = val.partition(":")
+            if cat == "brand":
+                continue
+            candidates.append(v)
+        else:
+            candidates.append(val)
+    label = candidates[-1] if candidates else slug
+    return label[:24] if truncate else label
 
 
 def _print_diagnosis(
@@ -606,7 +617,11 @@ def check_spend_coverage(
             # No reference at all is not perfect coverage: a 0.0 here read as
             # "nothing missing", and `corr` is NaN in that case, so nothing
             # warned. Undefined unless both sides are empty.
-            if ref_total:
+            # A disjoint window reindexes both to nothing regardless of the
+            # original totals -- always undefined, not genuine zero coverage.
+            if common.empty:
+                gap_pct = float("nan")
+            elif ref_total:
                 gap_pct = gap / ref_total
             else:
                 gap_pct = 0.0 if not dim_total else float("nan")
