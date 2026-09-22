@@ -25,9 +25,9 @@ Para isso, ajusta um modelo Deep Dive Raven por dimensão de quebra, com dois ti
 ```
 deepdive/
 ├── src/
-│   ├── config.py                    # DeepDiveConfig + build_config() — parse YAML + UpgradeResult
+│   ├── config.py                    # DeepDiveConfig + build_config() + override_funnel() — funil/adstock pós-diagnóstico
 │   ├── extraction.py                # load_upgrade_stan/meridian/raven — parquets via MLflow
-│   ├── diagnostics.py               # run_diagnostics() — filtra variáveis, cria __others__
+│   ├── diagnostics.py               # run_diagnostics() — filtra variáveis, cria __others__; check_spend_coverage()
 │   ├── pipeline.py                  # run_deep_dive() — orquestrador por dimensão
 │   ├── plots.py                     # Plotly dark theme + analyze_deepdive/batch/trees
 │   ├── report.py                    # generate_report() — CSVs + HTMLs por cliente
@@ -140,6 +140,13 @@ config         = build_config(upgrade, specs_path="configs/bradesco_eletro.yaml"
 all_vars       = [v for slugs in config.vars_per_dim.values() for v in slugs]
 upgrade.spend_df = load_breakdown_spend(workspace_dd, all_vars, start_date, end_date)
 
+# Opcional: as quebras declaradas cobrem todo o investimento do veículo?
+coverage       = check_spend_coverage(config, upgrade.spend_df, against="both",
+                                      workspace=workspace_dd, upgrade=upgrade,
+                                      upgrade_spend_col="<coluna do input_data>",
+                                      start_date=start_date, end_date=end_date)
+plot_spend_coverage(coverage)
+
 config, diag   = run_diagnostics(config, upgrade)
 result         = run_deep_dive(config, upgrade, auxiliary_metric_dfs=diag.auxiliary_metric_dfs)
 _              = analyze_deepdive(result)
@@ -171,9 +178,24 @@ result = run_deep_dive(config, upgrade, auxiliary_metric_dfs=auxiliary_metric_df
 # Ajustar: config.share_prior_scale = 0.005 (no client YAML)
 ```
 
-### 5.5 Adstock Customizado
+### 5.5 Funil e Adstock Customizado
 
-Declare no client YAML via `!instance`/`!params`. Chaves devem ser slugs exatamente como aparecem em `config.vars_per_dim[dim]` **após diagnóstico** (incluindo `__others__<dim>` se houver). Rode `run_diagnostics` primeiro pra saber a lista exata — `_run_raven_dim` (pipeline.py) valida e levanta erro antes de construir o modelo se faltar ou sobrar chave.
+O `__others__<dim>` só existe depois do diagnóstico, então a classificação de funil dele não cabe no client YAML. Use `override_funnel` (config.py) depois de `run_diagnostics` e antes do fit — ele aceita rótulo curto ou slug completo, e preenche as upper funnel que você não citar com o default do Raven (`WeibullAdstockEffect(max_lag=13)`), que é o que torna desnecessário montar o dict inteiro na mão:
+
+```python
+from config import override_funnel
+from prophetverse.effects import WeibullAdstockEffect
+
+override_funnel(
+    config, "product_level_4",
+    lower=["__others__product_level_4"],
+    adstock={"app-retargeting": WeibullAdstockEffect(max_lag=4)},
+)
+```
+
+`lower=None` (default) mantém a classificação atual; `lower=[]` limpa. Se `adstock` for omitido e alguma variável mudar de funil, o dict existente é podado pra continuar batendo com as upper funnel.
+
+Pra persistir no batch, declare no client YAML via `!instance`/`!params`. Aí as chaves precisam ser slugs exatamente como aparecem em `config.vars_per_dim[dim]` **após diagnóstico** (incluindo `__others__<dim>` se houver) — `_run_raven_dim` (pipeline.py) valida e levanta erro antes de construir o modelo se faltar ou sobrar chave.
 
 ```yaml
 upper_funnel_adstock_effect_per_dim:
@@ -256,6 +278,7 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 | `test_adstock_per_variable.py` | `upper_funnel_adstock_effect_per_dim`: adstock customizado por variável, chaves obrigatórias |
 | `test_raven_patch.py` | Patch de Hill priors no `Raven` (duck typing, no-op quando vazio) |
 | `test_plots.py` | Figuras Plotly geradas, template dark |
+| `test_spend_coverage.py` | `check_spend_coverage` (janela, buckets, validação) + `plot_spend_coverage` |
 | `test_report.py` | Criação de arquivos CSV e HTML |
 | `test_pipeline_helpers.py` | `align_to`, `wmon_norm` (Period e Datetime) |
 | `test_run_deep_dive_validation.py` | `auxiliary_metric_dfs` sem entry pro dim ou sem coluna obrigatória — levanta erro, sem fit |
@@ -272,8 +295,8 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 5. **`share_prior_scale`** deve ser calibrado por veículo: 0.05 quando `auxiliary_metric` aponta pro próprio investimento (sem exposição real) → 0.005 com exposição real (ex: impressions).
 6. **Alta correlação entre sub-canais** (todos crescem juntos) reduz identificabilidade. O CSL mitiga mas não elimina.
 7. **`proxy_ratio` fora de 0.85–1.15** pode indicar sinal ruidoso em `C_t` para o nível de detalhe solicitado (ver §6).
-8. **Classificação funil do `__others__`** herda `lower_funnel_vars_per_dim` só quando todos os membros agrupados são lower funnel (caso homogêneo). Se o bucket for misto (alguns lower, alguns upper), não há classificação inequívoca — o agregado fica upper funnel (adstocked) por padrão. Limitação conhecida.
-9. **Adstock per-variável é tudo ou nada por dimensão.** `upper_funnel_adstock_effect_per_dim[dim]` no modo dict exige uma entrada pra cada variável upper funnel daquele dim — sem meio-termo (algumas customizadas, outras no default automático). Cobrir todas com o mesmo efeito, ou usar um único `!instance`/`!params` (sem dict) pra aplicar a todo o grupo, quando não precisar de granularidade por variável.
+8. **Classificação funil do `__others__`** é inferida só quando todos os membros agrupados são lower funnel (caso homogêneo). Bucket misto não tem classificação inequívoca e fica upper funnel (adstocked) por padrão — `run_diagnostics` imprime a composição e o peso do bucket, e `override_funnel` é como você decide o contrário.
+9. **Adstock per-variável no client YAML é tudo ou nada por dimensão.** No modo dict, `upper_funnel_adstock_effect_per_dim[dim]` exige uma entrada pra cada variável upper funnel daquele dim. Via `override_funnel` não: as que você não citar recebem o default automaticamente.
 
 ---
 

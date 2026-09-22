@@ -191,3 +191,264 @@ def test_run_deep_dive_lower_funnel_vars_per_dim_end_to_end():
     )
     result_default = run_deep_dive(config_default, upgrade, aux_dfs, verbose=False)
     assert result_default.models["TestDim"].lower_funnel_variables == []
+
+
+# ── __others__ bucket funnel classification ──────────────────────────────────
+
+def _bucket_fixture():
+    """4 sub-channels: 2 survive the gate, 2 fall under 2% -> __others__ bucket."""
+    from extraction import UpgradeResult
+
+    idx = pd.date_range("2023-01-02", periods=52, freq="W-MON")
+    rng = np.random.default_rng(0)
+    P = "$metric:m$category:cat:"
+    big1, big2, sm1, sm2 = P + "big1", P + "big2", P + "small1", P + "small2"
+    spend = pd.DataFrame(
+        {
+            big1: rng.random(52) * 10000, big2: rng.random(52) * 10000,
+            sm1: rng.random(52) * 40, sm2: rng.random(52) * 40,
+        },
+        index=idx,
+    )
+    contrib = spend.copy()
+    contrib["total"] = rng.random(52) * 100
+    upgrade = UpgradeResult(
+        model=None, contrib_df=contrib, spend_df=spend, mmm_config={}, y_hat=None
+    )
+    return upgrade, (big1, big2, sm1, sm2)
+
+
+def _run(upgrade, slugs, lower):
+    from diagnostics import run_diagnostics
+
+    cfg = DeepDiveConfig(
+        dims=["dim1"], vars_per_dim={"dim1": list(slugs)}, media_var="total",
+        share_likelihood_metric="m", auxiliary_metric="m",
+        lower_funnel_vars_per_dim=lower,
+    )
+    return run_diagnostics(cfg, upgrade)
+
+
+def test_mixed_bucket_defaults_to_upper_funnel():
+    """A bucket whose members are a mix of lower and upper funnel has no
+    unambiguous classification -> stays upper (adstocked)."""
+    upgrade, (big1, big2, sm1, sm2) = _bucket_fixture()
+    new_cfg, diag = _run(upgrade, (big1, big2, sm1, sm2), {"dim1": [sm1]})
+
+    assert diag.bucketed["dim1"] == [sm1, sm2]
+    assert "__others__dim1" in new_cfg.vars_per_dim["dim1"]
+    assert new_cfg.lower_funnel_vars_per_dim.get("dim1", []) == []
+
+
+def test_homogeneous_lower_bucket_inherits_lower_funnel():
+    upgrade, (big1, big2, sm1, sm2) = _bucket_fixture()
+    new_cfg, _ = _run(upgrade, (big1, big2, sm1, sm2), {"dim1": [sm1, sm2]})
+
+    assert new_cfg.lower_funnel_vars_per_dim["dim1"] == ["__others__dim1"]
+
+
+def test_bucket_declared_in_yaml_survives_diagnostics():
+    """The bucket name is deterministic, so a client YAML may declare it up
+    front. That declaration must survive -- it is the DS's override of the
+    mixed-bucket default, and the only way to set it before the fit."""
+    upgrade, (big1, big2, sm1, sm2) = _bucket_fixture()
+    new_cfg, _ = _run(
+        upgrade, (big1, big2, sm1, sm2), {"dim1": [sm1, "__others__dim1"]}
+    )
+
+    assert new_cfg.lower_funnel_vars_per_dim["dim1"] == ["__others__dim1"]
+
+
+def test_declared_bucket_that_never_forms_is_a_silent_noop():
+    """Only one sub-channel fails the gate -> no bucket (a one-member bucket
+    would be a rename, not an aggregation). A YAML that declared the bucket
+    anyway must not break the run; the pipeline filters it out at fit time."""
+    from extraction import UpgradeResult
+
+    idx = pd.date_range("2023-01-02", periods=52, freq="W-MON")
+    rng = np.random.default_rng(0)
+    P = "$metric:m$category:cat:"
+    big1, big2, sm1 = P + "big1", P + "big2", P + "small1"
+    spend = pd.DataFrame(
+        {big1: rng.random(52) * 10000, big2: rng.random(52) * 10000,
+         sm1: rng.random(52) * 40},
+        index=idx,
+    )
+    contrib = spend.copy()
+    contrib["total"] = rng.random(52) * 100
+    upgrade = UpgradeResult(
+        model=None, contrib_df=contrib, spend_df=spend, mmm_config={}, y_hat=None
+    )
+    new_cfg, diag = _run(upgrade, (big1, big2, sm1), {"dim1": ["__others__dim1"]})
+
+    assert "dim1" not in diag.bucketed
+    assert new_cfg.vars_per_dim["dim1"] == [big1, big2]   # sm1 dropped entirely
+    assert new_cfg.lower_funnel_vars_per_dim["dim1"] == ["__others__dim1"]
+
+
+# ── override_funnel: the post-diagnostics declaration API ────────────────────
+
+P = "$metric:m$category:cat:"
+
+
+def _cfg(variables=None):
+    variables = variables or [P + "a", P + "b", P + "c", "__others__dim1"]
+    return DeepDiveConfig(
+        dims=["dim1"], vars_per_dim={"dim1": list(variables)}, media_var="total",
+        share_likelihood_metric="m", auxiliary_metric="m",
+    )
+
+
+def test_override_funnel_accepts_short_label_and_full_slug():
+    from config import override_funnel
+
+    cfg = _cfg()
+    override_funnel(cfg, "dim1", lower=["a", P + "b"], verbose=False)
+
+    assert cfg.lower_funnel_vars_per_dim["dim1"] == [P + "a", P + "b"]
+
+
+def test_override_funnel_fills_unlisted_upper_with_default():
+    """Raven needs the dict to cover every upper-funnel variable, so the ones
+    the DS didn't mention get the same shape Raven would have built."""
+    from config import override_funnel, DEFAULT_MAX_LAG
+    from prophetverse.effects import WeibullAdstockEffect
+
+    cfg = _cfg()
+    override_funnel(
+        cfg, "dim1",
+        lower=["__others__dim1"],
+        adstock={"a": WeibullAdstockEffect(max_lag=4)},
+        verbose=False,
+    )
+
+    eff = cfg.upper_funnel_adstock_effect_per_dim["dim1"]
+    assert set(eff) == {P + "a", P + "b", P + "c"}        # covers every upper
+    assert eff[P + "a"].max_lag == 4                       # explicit one kept
+    assert eff[P + "b"].max_lag == DEFAULT_MAX_LAG         # rest filled in
+
+
+def test_override_funnel_keeps_a_non_weibull_effect_as_given():
+    from config import override_funnel
+    from prophetverse.effects import GeometricAdstockEffect
+
+    cfg = _cfg()
+    override_funnel(cfg, "dim1", adstock={"a": GeometricAdstockEffect()}, verbose=False)
+
+    assert isinstance(
+        cfg.upper_funnel_adstock_effect_per_dim["dim1"][P + "a"], GeometricAdstockEffect
+    )
+
+
+def test_override_funnel_without_adstock_leaves_it_untouched():
+    from config import override_funnel
+
+    cfg = _cfg()
+    override_funnel(cfg, "dim1", lower=["a"], verbose=False)
+
+    assert cfg.upper_funnel_adstock_effect_per_dim == {}
+
+
+def test_override_funnel_rejects_a_raw_max_lag():
+    """An int used to be accepted as shorthand; it hid which distribution you
+    were picking, so the API now asks for the effect itself."""
+    from config import override_funnel
+
+    with pytest.raises(TypeError, match="effect instances"):
+        override_funnel(_cfg(), "dim1", adstock={"a": 4}, verbose=False)
+
+
+def test_override_funnel_rejects_unknown_variable():
+    from config import override_funnel
+
+    with pytest.raises(ValueError, match="not a variable of this dimension"):
+        override_funnel(_cfg(), "dim1", lower=["nope"], verbose=False)
+
+
+def test_override_funnel_rejects_adstock_on_a_lower_funnel_variable():
+    from config import override_funnel
+    from prophetverse.effects import WeibullAdstockEffect
+
+    with pytest.raises(ValueError, match="lower funnel has no adstock"):
+        override_funnel(
+            _cfg(), "dim1", lower=["a"],
+            adstock={"a": WeibullAdstockEffect(max_lag=4)}, verbose=False,
+        )
+
+
+def test_override_funnel_rejects_unknown_dimension():
+    from config import override_funnel
+
+    with pytest.raises(ValueError, match="not a modelled dimension"):
+        override_funnel(_cfg(), "nao_existe", lower=[], verbose=False)
+
+
+def test_override_funnel_rejects_ambiguous_label():
+    from config import override_funnel
+
+    cfg = _cfg([P + "a", "$metric:m$category:outra:a", P + "b"])
+    with pytest.raises(ValueError, match="ambiguous"):
+        override_funnel(cfg, "dim1", lower=["a"], verbose=False)
+
+
+def test_override_funnel_without_lower_keeps_the_current_classification():
+    """Calling it only to tweak adstock used to wipe the funnel split the
+    diagnostics had just established -- silently, changing the fit."""
+    from config import override_funnel
+    from prophetverse.effects import WeibullAdstockEffect
+
+    cfg = _cfg()
+    cfg.lower_funnel_vars_per_dim["dim1"] = ["__others__dim1"]
+    override_funnel(cfg, "dim1", adstock={"a": WeibullAdstockEffect(max_lag=4)},
+                    verbose=False)
+
+    assert cfg.lower_funnel_vars_per_dim["dim1"] == ["__others__dim1"]
+
+
+def test_override_funnel_with_empty_lower_clears_the_classification():
+    from config import override_funnel
+
+    cfg = _cfg()
+    cfg.lower_funnel_vars_per_dim["dim1"] = ["__others__dim1"]
+    override_funnel(cfg, "dim1", lower=[], verbose=False)
+
+    assert cfg.lower_funnel_vars_per_dim["dim1"] == []
+
+
+def test_override_funnel_prunes_a_stale_adstock_dict():
+    """Moving a variable to lower funnel leaves a dict adstock covering it;
+    Raven only notices at fit time, and blames diagnostics for it."""
+    from config import override_funnel
+    from prophetverse.effects import WeibullAdstockEffect
+
+    cfg = _cfg()
+    cfg.upper_funnel_adstock_effect_per_dim["dim1"] = {
+        v: WeibullAdstockEffect(max_lag=4) for v in cfg.vars_per_dim["dim1"]
+    }
+    override_funnel(cfg, "dim1", lower=["__others__dim1"], verbose=False)
+
+    upper = {v for v in cfg.vars_per_dim["dim1"] if v != "__others__dim1"}
+    assert set(cfg.upper_funnel_adstock_effect_per_dim["dim1"]) == upper
+
+
+def test_override_funnel_rejects_a_bare_string_for_lower():
+    """lower="x" would iterate characters and fail with '_' is not a variable."""
+    from config import override_funnel
+
+    with pytest.raises(TypeError, match="not a string"):
+        override_funnel(_cfg(), "dim1", lower="__others__dim1", verbose=False)
+
+
+def test_override_funnel_leaves_config_untouched_when_adstock_is_invalid():
+    """The funnel used to be rewritten before the adstock map was validated, so
+    a raise left the config half-changed."""
+    from config import override_funnel
+
+    cfg = _cfg()
+    before = dict(cfg.lower_funnel_vars_per_dim)
+
+    with pytest.raises(TypeError, match="effect instances"):
+        override_funnel(cfg, "dim1", lower=["__others__dim1"],
+                        adstock={"a": 4}, verbose=False)
+
+    assert cfg.lower_funnel_vars_per_dim == before

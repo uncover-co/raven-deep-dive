@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
@@ -19,8 +20,7 @@ class DeepDiveConfig:
     num_steps: int = 30_000
     min_spend_share: float = 0.02
     hhi_threshold: float = 0.85
-    min_active_weeks: int = 2          # piso absoluto (séries curtas); ver min_active_weeks_frac
-    min_active_weeks_frac: float = 0.05  # piso relativo: max(min_active_weeks, frac * n_weeks)
+    min_active_weeks_frac: float = 0.05  # semanas ativas mínimas, como fração da série
     model_name: str = ""          # human-readable model identifier (e.g. "Transacoes CC PF - Nacional")
     share_likelihood_metric: str = ""  # metric slug driving the Hill-curve regressor + diagnostics gate (defaults to investments)
     auxiliary_metric: str = ""    # metric slug used ONLY as CSL prior target + extra diagnostics guardrail (e.g. impressions) — never drives the regressor
@@ -231,9 +231,148 @@ def build_config(
         num_steps=cfg.get("num_steps", 30_000),
         min_spend_share=cfg.get("min_spend_share", 0.02),
         hhi_threshold=cfg.get("hhi_threshold", 0.85),
-        min_active_weeks=cfg.get("min_active_weeks", 2),
         min_active_weeks_frac=cfg.get("min_active_weeks_frac", 0.05),
         vehicle_spec=vehicle_spec,
         lower_funnel_vars_per_dim=cfg.get("lower_funnel_vars_per_dim") or {},
         upper_funnel_adstock_effect_per_dim=cfg.get("upper_funnel_adstock_effect_per_dim") or {},
     )
+
+
+# Weekly is the only supported frequency (README Sec. 8), and Raven's default
+# upper-funnel adstock is int(31 * 3 / 7) -- ~3 months of memory.
+DEFAULT_MAX_LAG = 13
+
+
+def _label_candidates(slug: str) -> set[str]:
+    """Short names a slug can be referred to by.
+
+    `{value}` is not always the last segment of a template (see
+    `state_template`), so the `$category:<cat>:<value>` form is matched too.
+    """
+    names = {slug.split(":")[-1]}
+    names.update(re.findall(r"\$[^$:]+:[^$:]+:([^$]+)", slug))
+    names.update(re.findall(r"\$state:([^$]+)", slug))
+    return names
+
+
+def _resolve_var(name: str, variables: list[str], dim: str) -> str:
+    """Match a short label (or a full slug) against the dimension's variables."""
+    if name in variables:
+        return name
+    hits = [v for v in variables if name in _label_candidates(v)]
+    if len(hits) == 1:
+        return hits[0]
+    if not hits:
+        labels = sorted(v.split(":")[-1] for v in variables)
+        raise ValueError(
+            f"[{dim}] '{name}' is not a variable of this dimension after "
+            f"diagnostics. Available: {labels}"
+        )
+    raise ValueError(f"[{dim}] '{name}' is ambiguous, matches {len(hits)} variables.")
+
+
+def override_funnel(
+    config,
+    dim: str,
+    *,
+    lower=None,
+    adstock: dict | None = None,
+    default_max_lag: int = DEFAULT_MAX_LAG,
+    verbose: bool = True,
+):
+    """Set the funnel split and per-variable adstock for one dimension.
+
+    Meant to run AFTER `run_diagnostics`, which is the first moment the real
+    variable list exists (an `__others__` bucket doesn't exist before it).
+
+        override_funnel(config, "product_level_4",
+                        lower=["__others__product_level_4"],
+                        adstock={"app-retargeting": WeibullAdstockEffect(max_lag=4)})
+
+    lower
+        Variables fit without adstock (immediate response). Replaces whatever
+        was declared for this dim in the client YAML. `None` (the default)
+        leaves the current classification alone -- pass `[]` to clear it.
+    adstock
+        ``{variable: effect}`` for upper-funnel variables, e.g.
+        ``WeibullAdstockEffect(max_lag=4)`` or ``GeometricAdstockEffect()``.
+        List only the ones you want to change -- the rest are filled with
+        ``WeibullAdstockEffect(max_lag=default_max_lag)``, which is the same
+        shape Raven builds by default, because Raven requires the dict to
+        cover every upper-funnel variable.
+        Pass ``None`` to leave adstock untouched (library default for the dim).
+
+    Variables are named by short label (``"app-retargeting"``) or full slug.
+    """
+    from prophetverse.effects import WeibullAdstockEffect
+    from prophetverse.effects.base import BaseEffect
+
+    if dim not in config.vars_per_dim:
+        raise ValueError(
+            f"'{dim}' is not a modelled dimension. Available: {sorted(config.vars_per_dim)}"
+        )
+    variables = config.vars_per_dim[dim]
+
+    if isinstance(lower, str):
+        raise TypeError(
+            f"lower must be a list of variables, not a string -- did you mean "
+            f'lower=["{lower}"]?'
+        )
+    # Resolve and validate BOTH inputs before touching `config`: a raise here
+    # used to leave the funnel already rewritten and the adstock untouched, so
+    # catching the error and carrying on silently changed the fit.
+    if lower is None:
+        lower_slugs = list(config.lower_funnel_vars_per_dim.get(dim, []))
+    else:
+        lower_slugs = [_resolve_var(n, variables, dim) for n in lower]
+
+    upper_slugs = [v for v in variables if v not in set(lower_slugs)]
+    given = None
+    if adstock is not None:
+        given = {_resolve_var(n, variables, dim): eff for n, eff in adstock.items()}
+        misplaced = [s for s in given if s in set(lower_slugs)]
+        if misplaced:
+            raise ValueError(
+                f"[{dim}] adstock given for lower-funnel variable(s) "
+                f"{[s.split(':')[-1] for s in misplaced]} -- lower funnel has no adstock."
+            )
+        bad = {s: v for s, v in given.items() if not isinstance(v, BaseEffect)}
+        if bad:
+            raise TypeError(
+                f"[{dim}] adstock values must be effect instances, not "
+                f"{sorted({type(v).__name__ for v in bad.values()})}. Use e.g. "
+                f"WeibullAdstockEffect(max_lag=4) or GeometricAdstockEffect(). "
+                f"Offending: {[s.split(':')[-1] for s in bad]}"
+            )
+
+    if lower is not None:
+        config.lower_funnel_vars_per_dim[dim] = lower_slugs
+    if given is not None:
+        config.upper_funnel_adstock_effect_per_dim[dim] = {
+            s: given.get(s) or WeibullAdstockEffect(max_lag=default_max_lag)
+            for s in upper_slugs
+        }
+    elif isinstance(config.upper_funnel_adstock_effect_per_dim.get(dim), dict):
+        existing = config.upper_funnel_adstock_effect_per_dim[dim]
+        config.upper_funnel_adstock_effect_per_dim[dim] = {
+            s: existing[s] if s in existing else WeibullAdstockEffect(max_lag=default_max_lag)
+            for s in upper_slugs
+        }
+
+    if verbose:
+        print(f"[{dim}]")
+        for s in upper_slugs:
+            eff = config.upper_funnel_adstock_effect_per_dim.get(dim, {}).get(s)
+            print(f"   upper  {s.split(':')[-1]:<40} {_describe_effect(eff)}")
+        for s in lower_slugs:
+            print(f"   lower  {s.split(':')[-1]:<40} no adstock")
+    return config
+
+
+def _describe_effect(effect) -> str:
+    """One-line description of an adstock effect, for the override summary."""
+    if effect is None:
+        return "library default adstock"
+    max_lag = getattr(effect, "max_lag", None)
+    name = type(effect).__name__
+    return f"{name}(max_lag={max_lag})" if max_lag is not None else name

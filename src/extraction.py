@@ -20,6 +20,7 @@ class UpgradeResult:
     y_hat: pd.Series                # fitted KPI values (sum of contribs)
     model_type: ModelType = "stan"  # "stan" | "meridian" | "raven"
     y_actual: pd.Series | None = None  # observed KPI
+    input_df: pd.DataFrame | None = None  # raw input_data.parquet (main model's own features)
 
 
 def _download_export_input_parquets(
@@ -127,6 +128,7 @@ def _load_from_parquets(
         y_hat=y_hat,
         model_type=model_type,
         y_actual=y_actual,
+        input_df=inp,
     )
 
 
@@ -252,6 +254,7 @@ def load_raven_upgrade(
         y_hat=y_hat,
         model_type="raven",
         y_actual=y_actual,
+        input_df=inp,
     )
 
 

@@ -37,8 +37,10 @@ UNCOVER_DARK_TEMPLATE = go.layout.Template(layout=go.Layout(**_LAYOUT_DEFAULTS))
 
 def _styled(fig: go.Figure) -> go.Figure:
     fig.update_layout(**_LAYOUT_DEFAULTS)
-    for ax in ["xaxis", "yaxis", "xaxis2", "yaxis2"]:
-        fig.update_layout(**{ax: dict(gridcolor="#2A2A2A", zerolinecolor="#2A2A2A")})
+    # Every axis the figure actually has -- a hardcoded xaxis/xaxis2 pair left
+    # subplots 3+ on plotly's default white grid.
+    fig.update_xaxes(gridcolor="#2A2A2A", zerolinecolor="#2A2A2A")
+    fig.update_yaxes(gridcolor="#2A2A2A", zerolinecolor="#2A2A2A")
     return fig
 
 
@@ -969,3 +971,52 @@ def analyze_trees(
             figs[key] = fig
 
     return figs
+
+
+# ── Spend coverage: reference vs sum of breakdowns ───────────────────────────
+
+def plot_spend_coverage(report: pd.DataFrame, title: str = "") -> go.Figure:
+    """Overlay the reference spend against the sum of the breakdowns, per dim.
+
+    Takes the report from `diagnostics.check_spend_coverage()`, which carries
+    the series in `report.attrs["series"]`. A gap that is flat across the
+    window reads very differently from one concentrated in a few weeks, and
+    only the lines show which of the two it is.
+    """
+    series = report.attrs.get("series") or {}
+    if not series:
+        raise ValueError(
+            "report has no series -- it must come from check_spend_coverage()."
+        )
+    dims = list(dict.fromkeys(dim for dim, _ in series))
+    fig = make_subplots(
+        rows=len(dims), cols=1, shared_xaxes=False,
+        subplot_titles=[str(d) for d in dims], vertical_spacing=0.10,
+    )
+    ref_style = {"workspace": "dot", "upgrade": "dash"}
+    shown: set[str] = set()
+
+    for r, dim in enumerate(dims, start=1):
+        pairs = {ref: v for (d, ref), v in series.items() if d == dim}
+        _, dim_series = next(iter(pairs.values()))
+        fig.add_trace(go.Scatter(
+            x=dim_series.index, y=dim_series.values,
+            name="sum of breakdowns", legendgroup="breakdowns",
+            showlegend="breakdowns" not in shown,
+            mode="lines", line=dict(color=UNCOVER_COLORS[0], width=2),
+        ), row=r, col=1)
+        shown.add("breakdowns")
+        for ref, (ref_series, _) in pairs.items():
+            fig.add_trace(go.Scatter(
+                x=ref_series.index, y=ref_series.values,
+                name=f"reference ({ref})", legendgroup=ref,
+                showlegend=ref not in shown,
+                mode="lines",
+                line=dict(color="#FFFFFF", width=2, dash=ref_style.get(ref, "dot")),
+            ), row=r, col=1)
+            shown.add(ref)
+
+    fig.update_layout(title=title or "Spend coverage — reference vs. sum of breakdowns")
+    fig = _styled(fig)
+    fig.update_layout(height=max(320 * len(dims), 360))
+    return fig
