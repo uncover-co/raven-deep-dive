@@ -77,7 +77,7 @@ MMM Base
 Cada dimensão é ajustada **independentemente**, mas todas usam o mesmo `C_t` como âncora. O pipeline opera em três etapas:
 
 1. **Extração** — `load_upgrade_stan` / `load_meridian_upgrade` / `load_raven_upgrade`: carrega `contrib_df` e `spend_df` via parquets MLflow.
-2. **Diagnóstico** — `run_diagnostics`: usa `auxiliary_metric` (obrigatório) como gate — filtra sub-canais com <2% nessa métrica, agrupa em `__others__`, calcula HHI e semanas ativas. Se o veículo não tem métrica de exposição real, o client YAML aponta `auxiliary_metric` pro `default_metric` do veículo (investimento como seu próprio proxy) — a escolha é feita na config, não em runtime. Se a dimensão não tiver dado real na métrica configurada, `run_diagnostics` levanta erro (sem fallback silencioso).
+2. **Diagnóstico** — `run_diagnostics`: usa `auxiliary_metric` (obrigatório) como gate — filtra sub-canais com <2% nessa métrica, agrupa em `__others__`, calcula HHI e semanas ativas. `auxiliary_metric` é declarado no `vehicle_specs.yaml`, ao lado do `default_metric` — é o que o veículo mede, não o que o cliente escolhe. Se o veículo não tem exposição real, aponta pro próprio `default_metric`. O client YAML pode sobrescrever (o build avisa quando isso acontece). Se a dimensão não tiver dado real na métrica configurada, `run_diagnostics` levanta erro (sem fallback silencioso).
 3. **Deep Dive Raven** — `run_deep_dive`: ajusta modelo Hill por dimensão, ancorado em `C_t`. Requer `auxiliary_metric_dfs` (de `diag.auxiliary_metric_dfs`) — não é opcional.
 
 ---
@@ -112,7 +112,6 @@ data_version: <nome_do_snapshot>  # opcional -- fixa a leitura num data version 
 start_date: 2022-01-03
 end_date: 2025-12-29
 media_var: $metric:investments$vehicle:eletromidia$category:brand:nome-da-marca
-auxiliary_metric: investments  # obrigatório -- métrica de exposição real (ex: impressions) quando o veículo tiver; senão, o mesmo valor do investimento
 ```
 
 **Registrar no registry** (formato multi-veículo, recomendado — `model_type` vem do client YAML, não do registry):
@@ -167,7 +166,7 @@ batch_figs = analyze_batch(all_results, df_meta)
 
 ### 5.4 Prior com Dados Auxiliares
 
-Fluxo padrão (5.2): `auxiliary_metric_dfs=diag.auxiliary_metric_dfs`, montado automaticamente por `run_diagnostics` a partir do `auxiliary_metric` do client YAML.
+Fluxo padrão (5.2): `auxiliary_metric_dfs=diag.auxiliary_metric_dfs`, montado automaticamente por `run_diagnostics` a partir do `auxiliary_metric` do veículo.
 
 Pra passar medição própria em vez disso, precisa cobrir **todas** as dims em `config.dims` (`run_deep_dive` levanta erro se faltar uma):
 

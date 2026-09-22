@@ -2,6 +2,7 @@ vehicles:
   eletromidia:
     vehicle_slug: eletromidia
     default_metric: investments
+    auxiliary_metric: investments   # sem metrica de exposicao no workspace
 
     # Dimensões que recebem modelo Raven 2 próprio.
     # Estado, Vertical e Tipo são derivados por rollup de Praca e Ambiente.
@@ -326,6 +327,7 @@ vehicles:
   tiktok:
     vehicle_slug: tiktok
     default_metric: "w:investments---tiktok-mmm"
+    auxiliary_metric: "w:impressions---tiktok-mmm"
 
     # Modela só na granularidade máxima; campaign_category e product_level_1
     # são derivados por rollup via hierarquia declarada em product_level_4.

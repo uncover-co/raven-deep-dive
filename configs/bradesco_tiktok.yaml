@@ -20,7 +20,6 @@ media_var: "tiktok ads"
 dimensions: null
 
 # Share likelihood deve usar exposição, não investimento (ver README).
-auxiliary_metric: "w:impressions---tiktok-mmm"
 
 # Sub-canais de resposta imediata (sem adstock), via tiktok.hierarchy.pl4_to_pl1.
 # Validado com dado real (docs/deepdive-funnel-prior-exposure-findings.md).

@@ -23,7 +23,7 @@ class DeepDiveConfig:
     min_active_weeks: int = 2          # piso absoluto (séries curtas); ver min_active_weeks_frac
     min_active_weeks_frac: float = 0.05  # piso relativo: max(min_active_weeks, frac * n_weeks)
     model_name: str = ""          # human-readable model identifier (e.g. "Transacoes CC PF - Nacional")
-    auxiliary_metric: str = ""    # metric slug used ONLY as CSL prior target + extra diagnostics guardrail (e.g. impressions) — never drives the regressor
+    auxiliary_metric: str = ""    # exposure metric: CSL prior target + diagnostics gate. Never the regressor.
     vehicle_spec: dict = field(default_factory=dict)  # full spec from vehicle_specs.yaml
     # {dim_name: [slug, ...]} fit WITHOUT adstock; rest of the dim keeps adstock.
     # Vehicle-agnostic: pipeline only sees slugs, no funnel/branding concept baked in.
@@ -76,12 +76,11 @@ def _get_template(vehicle_spec: dict, breakdown_spec: dict) -> str:
 
 
 def _resolve_metrics(vehicle_spec: dict, auxiliary_metric: str) -> list[str]:
-    """Metrics fetched for every breakdown slug: the vehicle's primary
-    (investment) metric, plus the client's auxiliary_metric -- independent
-    of which model anchors it (stan/meridian/raven). auxiliary_metric is
-    mandatory (build_config raises if unset); fetches only the primary
-    metric when it's set to the same value as the primary (no real
-    exposure metric, investment used as its own proxy)."""
+    """Metrics fetched for every breakdown slug: the vehicle's default_metric
+    (investment) plus its auxiliary_metric (exposure) -- independent of which
+    model anchors it (stan/meridian/raven). Fetches only the primary when the
+    two are the same value, which is how a vehicle with no real exposure
+    metric declares it."""
     primary = vehicle_spec.get("default_metric", "investments")
     if auxiliary_metric and auxiliary_metric != primary:
         return [primary, auxiliary_metric]
@@ -96,7 +95,7 @@ def _build_vars_per_dim(
     Any scalar field in the client `cfg` (brand, nameplate, etc.) is available to
     templates as a placeholder — new per-vehicle template variables need no code change.
 
-    metrics: fetched metrics (vehicle's primary + client's auxiliary_metric), from
+    metrics: fetched metrics (vehicle's default_metric + auxiliary_metric), from
     _resolve_metrics().
     """
     vehicle_slug = vehicle_spec.get("vehicle_slug", "eletromidia")
@@ -182,13 +181,21 @@ def build_config(
         )
     vehicle_spec = vehicle_specs["vehicles"][vehicle_key]
     model_type = cfg.get("model_type", "stan")
-    auxiliary_metric = cfg.get("auxiliary_metric", "")
+    auxiliary_metric = cfg.get("auxiliary_metric") or vehicle_spec.get("auxiliary_metric", "")
     if not auxiliary_metric:
         raise ValueError(
-            f"'auxiliary_metric' not set in {specs_path}. Every Deep Dive needs an "
+            f"'auxiliary_metric' not set for vehicle '{vehicle_key}' in "
+            f"{vehicle_specs_path}, nor in {specs_path}. Every Deep Dive needs an "
             "explicit metric to drive the share-likelihood proxy — set it to a real "
-            "exposure metric (e.g. impressions) when available, or to the same value "
-            "as the investment metric when the vehicle has no exposure metric."
+            "exposure metric (e.g. impressions) when available, or to the vehicle's "
+            "default_metric when it has no exposure metric."
+        )
+
+    client_aux = cfg.get("auxiliary_metric")
+    if client_aux and client_aux != vehicle_spec.get("auxiliary_metric"):
+        print(
+            f"[config] auxiliary_metric overridden for this client: "
+            f"{vehicle_spec.get('auxiliary_metric') or '(none on the vehicle)'} -> {client_aux}"
         )
 
     metrics = _resolve_metrics(vehicle_spec, auxiliary_metric)

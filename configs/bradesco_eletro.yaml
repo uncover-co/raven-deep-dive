@@ -21,7 +21,6 @@ media_var: "$metric:investments$vehicle:eletromidia$category:brand:bradesco"
 
 # eletromidia não tem métrica de exposição própria (confirmado: sem impressions/
 # reach no workspace) -- aponta pro mesmo investimento como proxy de share.
-auxiliary_metric: "investments"
 
 share_prior_scale: 0.05
 proxy_ct_tolerance: 0.15
