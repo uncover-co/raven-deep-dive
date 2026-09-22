@@ -346,12 +346,10 @@ def override_funnel(
             for s in upper_slugs
         }
     elif isinstance(config.upper_funnel_adstock_effect_per_dim.get(dim), dict):
-        # A variable that just moved to lower funnel would leave a stale key
-        # here, and Raven only complains at fit time -- blaming diagnostics.
+        existing = config.upper_funnel_adstock_effect_per_dim[dim]
         config.upper_funnel_adstock_effect_per_dim[dim] = {
-            s: eff
-            for s, eff in config.upper_funnel_adstock_effect_per_dim[dim].items()
-            if s in set(upper_slugs)
+            s: existing[s] if s in existing else WeibullAdstockEffect(max_lag=default_max_lag)
+            for s in upper_slugs
         }
 
     if verbose:
