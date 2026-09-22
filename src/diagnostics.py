@@ -4,9 +4,6 @@ import re
 import pandas as pd
 
 
-_ABS_MIN_WEEKS = 2
-
-
 def sanitize_dim_name(name: str) -> str:
     """Slugify a dimension name for use as a DataFrame column or filename."""
     return re.sub(r"[^\w-]", "", name.lower().replace(" ", "-"))
@@ -29,6 +26,7 @@ def run_diagnostics(
     upgrade: UpgradeResult,
     min_spend_share: float | None = None,
     hhi_threshold: float | None = None,
+    min_active_weeks: int | None = None,
     min_active_weeks_frac: float | None = None,
 ) -> tuple[DeepDiveConfig, DiagnosisResult]:
     """Filter config vars by spend structure; bucket tiny vars into __others__.
@@ -39,6 +37,7 @@ def run_diagnostics(
     """
     min_spend_share = min_spend_share if min_spend_share is not None else config.min_spend_share
     hhi_threshold = hhi_threshold if hhi_threshold is not None else config.hhi_threshold
+    min_active_weeks = min_active_weeks if min_active_weeks is not None else config.min_active_weeks
     min_active_weeks_frac = (
         min_active_weeks_frac if min_active_weeks_frac is not None else config.min_active_weeks_frac
     )
@@ -64,10 +63,10 @@ def run_diagnostics(
     # see README Sec. 8 for why this is a known, accepted limitation.
     new_lower_funnel_vars_per_dim = {k: list(v) for k, v in config.lower_funnel_vars_per_dim.items()}
     n_weeks = len(df)
-    # Relative floor, so the bar scales with the modelling window. _ABS_MIN_WEEKS
-    # is a guard, not a knob: below 2 active weeks a Hill curve has nothing to
+    # Relative floor, so the bar scales with the modelling window. min_active_weeks
+    # is a guard, not just a knob: below 2 active weeks a Hill curve has nothing to
     # fit, and 5% of a short series can round down to 1.
-    effective_min_weeks = max(_ABS_MIN_WEEKS, round(min_active_weeks_frac * n_weeks))
+    effective_min_weeks = max(min_active_weeks, round(min_active_weeks_frac * n_weeks))
 
     spend_metric = config.spend_metric
     metric_prefix = f"$metric:{spend_metric}$"
@@ -254,6 +253,7 @@ def run_diagnostics(
         num_steps=config.num_steps,
         min_spend_share=min_spend_share,
         hhi_threshold=hhi_threshold,
+        min_active_weeks=min_active_weeks,
         min_active_weeks_frac=min_active_weeks_frac,
         vehicle_spec=config.vehicle_spec,
         lower_funnel_vars_per_dim=new_lower_funnel_vars_per_dim,
@@ -294,8 +294,7 @@ def _print_model_composition(
     def _label(s: str) -> str:
         if s.startswith("__others__"):
             return s
-        parts = re.findall(r"\$category:[^$:]+:([^$]+)", s)
-        return parts[-1] if parts else s
+        return _slug_label(s, truncate=False)
 
     for dim, slugs in vars_per_dim.items():
         lower = set(lower_per_dim.get(dim, []))
@@ -361,12 +360,24 @@ def _wrap_members(members: list[str], label_fn) -> str:
     )
 
 
-def _slug_label(slug: str) -> str:
+def _slug_label(slug: str, truncate: bool = True) -> str:
     """Extract short human-readable label from a full slug for display."""
-    parts = re.findall(r'\$category:[^$:]+:([^$]+)', slug)
-    if parts:
-        return parts[-1][:24]
-    return slug[:24]
+    # Any $key:value segment can hold the label, not just $category (e.g.
+    # state_template's $state:{value}) -- skip fixed framing/brand, take the
+    # last remaining segment so a new filter type needs no special case.
+    candidates = []
+    for key, val in re.findall(r"\$([a-z_]+):([^$]+)", slug):
+        if key in ("metric", "vehicle"):
+            continue
+        if key == "category":
+            cat, _, v = val.partition(":")
+            if cat == "brand":
+                continue
+            candidates.append(v)
+        else:
+            candidates.append(val)
+    label = candidates[-1] if candidates else slug
+    return label[:24] if truncate else label
 
 
 def _print_diagnosis(
@@ -606,7 +617,11 @@ def check_spend_coverage(
             # No reference at all is not perfect coverage: a 0.0 here read as
             # "nothing missing", and `corr` is NaN in that case, so nothing
             # warned. Undefined unless both sides are empty.
-            if ref_total:
+            # A disjoint window reindexes both to nothing regardless of the
+            # original totals -- always undefined, not genuine zero coverage.
+            if common.empty:
+                gap_pct = float("nan")
+            elif ref_total:
                 gap_pct = gap / ref_total
             else:
                 gap_pct = 0.0 if not dim_total else float("nan")

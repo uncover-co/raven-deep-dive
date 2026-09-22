@@ -20,7 +20,8 @@ class DeepDiveConfig:
     num_steps: int = 30_000
     min_spend_share: float = 0.02
     hhi_threshold: float = 0.85
-    min_active_weeks_frac: float = 0.05  # semanas ativas mínimas, como fração da série
+    min_active_weeks: int = 2          # piso absoluto (séries curtas); ver min_active_weeks_frac
+    min_active_weeks_frac: float = 0.05  # piso relativo: max(min_active_weeks, frac * n_weeks)
     model_name: str = ""          # human-readable model identifier (e.g. "Transacoes CC PF - Nacional")
     auxiliary_metric: str = ""    # exposure metric: CSL prior target + diagnostics gate. Never the regressor.
     vehicle_spec: dict = field(default_factory=dict)  # full spec from vehicle_specs.yaml
@@ -223,6 +224,7 @@ def build_config(
         num_steps=cfg.get("num_steps", 30_000),
         min_spend_share=cfg.get("min_spend_share", 0.02),
         hhi_threshold=cfg.get("hhi_threshold", 0.85),
+        min_active_weeks=cfg.get("min_active_weeks", 2),
         min_active_weeks_frac=cfg.get("min_active_weeks_frac", 0.05),
         vehicle_spec=vehicle_spec,
         lower_funnel_vars_per_dim=cfg.get("lower_funnel_vars_per_dim") or {},
