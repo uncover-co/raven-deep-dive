@@ -302,3 +302,23 @@ def test_sunburst_colors_normalise_against_the_root():
     i = out["labels"].index("a1")
 
     assert colors[i] == pytest.approx(1.25)
+
+
+def test_tree_raises_on_a_hierarchy_key_that_does_not_exist():
+    """batch.rollup_contribs_ts raises on this typo; the sunburst fell back to
+    an empty map and drew a flat wheel that looks like a real result."""
+    from plots import plot_tree_dim
+
+    spec = {
+        "breakdowns": {"ambiente": {
+            "category": "ambiente",
+            "rollups": [{"level": "vertical", "groups": "grupos_com_typo"}],
+        }},
+        "hierarchy": {"grupos": {"g1": {"values": ["a1"]}}},
+    }
+
+    from types import SimpleNamespace
+    stub = SimpleNamespace(shares_model={}, shares_spend={})
+
+    with pytest.raises(ValueError, match="not found in hierarchy"):
+        plot_tree_dim("ambiente", {"cliente": stub}, spec)

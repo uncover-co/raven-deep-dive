@@ -856,11 +856,26 @@ def plot_tree_dim(
     rollup_specs = bd_spec.get("rollups", [])
     hierarchy = vehicle_spec.get("hierarchy", {})
 
-    # Pick best hierarchy: groups (full tree) > flat map > nothing
-    groups_rspec = next(
-        (r for r in rollup_specs if "groups" in r and "attr" not in r), None
-    )
-    map_rspec = next((r for r in rollup_specs if "map" in r), None)
+    # Pick best hierarchy: groups (full tree) > flat map > nothing.
+    # A declared key that isn't in `hierarchy` is a typo, not an empty tree:
+    # falling back to {} sends every leaf to the ungrouped branch and draws a
+    # flat wheel that looks like a legitimate result. batch.rollup_contribs_ts
+    # raises on the same mistake.
+    def _pick(kind: str, extra=lambda r: True):
+        for r in rollup_specs:
+            if kind not in r or not extra(r):
+                continue
+            if r[kind] not in hierarchy:
+                raise ValueError(
+                    f"[{dim}] rollup '{r.get('level', kind)}' references {kind} "
+                    f"'{r[kind]}' not found in hierarchy. "
+                    f"Available: {list(hierarchy.keys())}."
+                )
+            return r
+        return None
+
+    groups_rspec = _pick("groups", lambda r: "attr" not in r)
+    map_rspec = _pick("map")
 
     if not groups_rspec and not map_rspec:
         return None
@@ -882,11 +897,11 @@ def plot_tree_dim(
             continue
 
         if groups_rspec:
-            groups_data = hierarchy.get(groups_rspec["groups"], {})
+            groups_data = hierarchy[groups_rspec["groups"]]
             data = _groups_sunburst(sh_m, sh_s, category, groups_data,
                                     groups_rspec.get("members_key", "values"))
         else:
-            flat_map = hierarchy.get(map_rspec["map"], {})
+            flat_map = hierarchy[map_rspec["map"]]
             data = _flat_map_sunburst(sh_m, sh_s, category, flat_map)
 
         colors = _roas_colors(data["values_m"], data["values_s"], data["parents"])
@@ -996,13 +1011,9 @@ def analyze_trees(
         for dim in all_dims:
             bd_spec = breakdowns.get(dim, {})
             rollup_specs = bd_spec.get("rollups", [])
-            has_groups = any(
-                "groups" in r and hierarchy.get(r["groups"]) for r in rollup_specs
-            )
-            has_map = any(
-                "map" in r and hierarchy.get(r["map"]) for r in rollup_specs
-            )
-            if not has_groups and not has_map:
+            # Only whether a hierarchy is declared -- plot_tree_dim decides
+            # whether the key resolves, and raises on a typo.
+            if not any("groups" in r or "map" in r for r in rollup_specs):
                 continue
 
             fig = plot_tree_dim(dim, veh_results, vehicle_spec, chart_type=chart_type)
