@@ -13,7 +13,7 @@ import os
 import re as _re
 import traceback
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -47,8 +47,14 @@ def run_single_client(
     registry_path: str,
     output_base_dir: str,
     verbose: bool = True,
+    after_diagnostics: Callable | None = None,
 ) -> tuple[DDResult | None, Any | None, str | None]:
     """Run full deep dive pipeline for one client.
+
+    after_diagnostics: called as f(client_name, config, diag, upgrade) between
+        run_diagnostics() and the fit -- the first moment the real variable list
+        exists, so it is where override_funnel() and check_spend_coverage()
+        belong. Return a config to replace the one passed in, or None to keep it.
 
     Returns (result, diag, error_message). error_message is None on success.
     """
@@ -90,6 +96,9 @@ def run_single_client(
         )
 
         config, diag = run_diagnostics(config, upgrade)
+
+        if after_diagnostics is not None:
+            config = after_diagnostics(client_name, config, diag, upgrade) or config
 
         result = run_deep_dive(
             config, upgrade, auxiliary_metric_dfs=diag.auxiliary_metric_dfs,
@@ -141,6 +150,7 @@ def run_deep_dive_batch(
     output_base_dir: str,
     clients: list[str] | None = None,
     verbose: bool = True,
+    after_diagnostics: Callable | None = None,
 ) -> tuple[dict[str, DDResult], dict[str, Any], dict[str, str]]:
     """Run deep dive for all (or selected) clients/vehicles in registry.
 
@@ -152,6 +162,9 @@ def run_deep_dive_batch(
                  by run_key (e.g. "bradesco_tiktok" for a specific vehicle).
                  None = all.
         verbose: pass to pipeline
+        after_diagnostics: per-client hook run between the diagnosis and the
+            fit, f(run_key, config, diag, upgrade) -> config | None. Same
+            moment the single-client notebooks call override_funnel().
 
     Returns:
         (results, diagnostics, errors) keyed by run_key.
@@ -168,6 +181,7 @@ def run_deep_dive_batch(
             registry_path=registry_path,
             output_base_dir=output_base_dir,
             verbose=verbose,
+            after_diagnostics=after_diagnostics,
         )
         if err:
             errors[run_key] = err

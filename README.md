@@ -164,6 +164,21 @@ df_meta    = consolidate_results(all_results)  # usa result.config.vehicle_spec 
 batch_figs = analyze_batch(all_results, df_meta)
 ```
 
+**Ajuste por cliente:** `after_diagnostics` roda entre o diagnóstico e o fit — o mesmo momento em que o single-client chama `override_funnel`, e a primeira vez que o `__others__` existe.
+
+```python
+def after_diagnostics(run_key, config, diag, upgrade):
+    if run_key == "bradesco_eletro":
+        override_funnel(config, "Ambiente", lower=["__others__ambiente"])
+    check_spend_coverage(config, upgrade.spend_df, against="upgrade",
+                         upgrade=upgrade, upgrade_spend_col="tiktok ads investment")
+    return config
+
+run_deep_dive_batch(..., after_diagnostics=after_diagnostics)
+```
+
+Retornar `None` mantém o config recebido. Um erro dentro do hook derruba só aquele cliente, e vai pro dict `errors`.
+
 ### 5.4 Prior com Dados Auxiliares
 
 Fluxo padrão (5.2): `auxiliary_metric_dfs=diag.auxiliary_metric_dfs`, montado automaticamente por `run_diagnostics` a partir do `auxiliary_metric` do veículo.
