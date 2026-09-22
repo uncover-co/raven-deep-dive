@@ -287,7 +287,7 @@ def override_funnel(
 
         override_funnel(config, "product_level_4",
                         lower=["__others__product_level_4"],
-                        adstock={"app-retargeting": 4})
+                        adstock={"app-retargeting": WeibullAdstockEffect(max_lag=4)})
 
     lower
         Variables fit without adstock (immediate response). Replaces whatever
