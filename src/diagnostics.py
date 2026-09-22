@@ -409,7 +409,7 @@ def _print_diagnosis(
             # original slug, so looking for an __others__ row here never matched.
             members = (bucketed or {}).get(dim)
             if members:
-                pct = float(main[~main["keep"]]["pct_gate_dim"].sum())
+                pct = float(main[main["slug"].isin(members)]["pct_gate_dim"].sum())
                 print(f"       → {'__others__':<24}  {pct:>6.1%}  "
                       f"aggregates {len(members)} breakdown(s)")
         for _, row in info.iterrows():
