@@ -806,10 +806,24 @@ def _groups_sunburst(
     return dict(ids=ids, labels=labels, parents=parents, values_m=vals_m, values_s=vals_s)
 
 
-def _roas_colors(vals_m: list[float], vals_s: list[float]) -> list[float]:
-    """Compute per-node ROAS index for sunburst coloring."""
-    total_m = sum(vals_m) or 1.0
-    total_s = sum(vals_s) or 1.0
+def _roas_colors(
+    vals_m: list[float],
+    vals_s: list[float],
+    parents: list[str] | None = None,
+) -> list[float]:
+    """Compute per-node ROAS index for sunburst coloring.
+
+    Normalise against the root. Summing every node counts a grouped leaf once
+    per ancestor level and an ungrouped one only once, so the global factor
+    lands on the wrong base and shifts every colour.
+    """
+    if parents is not None:
+        roots = [i for i, p in enumerate(parents) if not p]
+        total_m = sum(vals_m[i] for i in roots) or 1.0
+        total_s = sum(vals_s[i] for i in roots) or 1.0
+    else:
+        total_m = sum(vals_m) or 1.0
+        total_s = sum(vals_s) or 1.0
     colors = []
     for sm, ss in zip(vals_m, vals_s):
         sm_n = sm / total_m
@@ -875,7 +889,7 @@ def plot_tree_dim(
             flat_map = hierarchy.get(map_rspec["map"], {})
             data = _flat_map_sunburst(sh_m, sh_s, category, flat_map)
 
-        colors = _roas_colors(data["values_m"], data["values_s"])
+        colors = _roas_colors(data["values_m"], data["values_s"], data["parents"])
         show_scale = ci == n
 
         marker_kwargs: dict = dict(

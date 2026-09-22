@@ -280,3 +280,25 @@ def test_short_label_uses_the_category_when_given():
 
     assert _short_label(slug) == "bradesco"
     assert _short_label(slug, category="state") == "sp"
+
+
+def test_sunburst_colors_normalise_against_the_root():
+    """Aggregated nodes count once per ancestor level, so summing every node
+    put the colour scale on the wrong base."""
+    from plots import _groups_sunburst, _roas_colors
+
+    groups = {
+        "g1": {"vertical": "ruas", "tipo": "outdoor", "ambientes": ["a1", "a2"]},
+        "g2": {"vertical": "transportes", "tipo": "indoor", "ambientes": ["a3"]},
+    }
+    pfx = "$metric:m$category:ambiente:"
+    sm = pd.Series({pfx + "a1": 0.25, pfx + "a2": 0.25, pfx + "a3": 0.20,
+                    "__others__ambiente": 0.30})
+    ss = pd.Series({pfx + "a1": 0.20, pfx + "a2": 0.20, pfx + "a3": 0.20,
+                    "__others__ambiente": 0.40})
+
+    out = _groups_sunburst(sm, ss, "ambiente", groups, "ambientes")
+    colors = _roas_colors(out["values_m"], out["values_s"], out["parents"])
+    i = out["labels"].index("a1")
+
+    assert colors[i] == pytest.approx(1.25)
