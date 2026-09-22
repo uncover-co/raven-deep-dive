@@ -437,3 +437,18 @@ def test_override_funnel_rejects_a_bare_string_for_lower():
 
     with pytest.raises(TypeError, match="not a string"):
         override_funnel(_cfg(), "dim1", lower="__others__dim1", verbose=False)
+
+
+def test_override_funnel_leaves_config_untouched_when_adstock_is_invalid():
+    """The funnel used to be rewritten before the adstock map was validated, so
+    a raise left the config half-changed."""
+    from config import override_funnel
+
+    cfg = _cfg()
+    before = dict(cfg.lower_funnel_vars_per_dim)
+
+    with pytest.raises(TypeError, match="effect instances"):
+        override_funnel(cfg, "dim1", lower=["__others__dim1"],
+                        adstock={"a": 4}, verbose=False)
+
+    assert cfg.lower_funnel_vars_per_dim == before
