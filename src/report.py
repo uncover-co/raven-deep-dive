@@ -340,20 +340,6 @@ def _others_active_weeks(diag, dim: str, base) -> int | None:
     """Weeks the __others__ column is actually active: the union over members.
 
     `diag.bucketed_raw[dim]` keeps each member's pre-aggregation series, so the
-    union is exact. Without it, fall back to the max (an understatement, but
-    the only thing the summary rows support).
-    """
-    raw = (diag.bucketed_raw or {}).get(dim) if diag is not None else None
-    if raw is not None and not raw.empty:
-        per_week = raw.groupby("date")["investment"].sum()
-        return int((per_week > 0).sum())
-    return int(base["active_weeks"].max()) if len(base) else None
-
-
-def _others_active_weeks(diag, dim: str, base) -> int | None:
-    """Weeks the __others__ column is actually active: the union over members.
-
-    `diag.bucketed_raw[dim]` keeps each member's pre-aggregation series, so the
     union is exact. Without it, fall back to the max -- an understatement, but
     the only thing the summary rows support.
     """
