@@ -287,7 +287,7 @@ def override_funnel(
 
         override_funnel(config, "product_level_4",
                         lower=["__others__product_level_4"],
-                        adstock={"app-retargeting": 4})
+                        adstock={"app-retargeting": WeibullAdstockEffect(max_lag=4)})
 
     lower
         Variables fit without adstock (immediate response). Replaces whatever
@@ -318,13 +318,16 @@ def override_funnel(
             f"lower must be a list of variables, not a string -- did you mean "
             f'lower=["{lower}"]?'
         )
+    # Resolve and validate BOTH inputs before touching `config`: a raise here
+    # used to leave the funnel already rewritten and the adstock untouched, so
+    # catching the error and carrying on silently changed the fit.
     if lower is None:
         lower_slugs = list(config.lower_funnel_vars_per_dim.get(dim, []))
     else:
         lower_slugs = [_resolve_var(n, variables, dim) for n in lower]
-        config.lower_funnel_vars_per_dim[dim] = lower_slugs
 
     upper_slugs = [v for v in variables if v not in set(lower_slugs)]
+    given = None
     if adstock is not None:
         given = {_resolve_var(n, variables, dim): eff for n, eff in adstock.items()}
         misplaced = [s for s in given if s in set(lower_slugs)]
@@ -341,17 +344,19 @@ def override_funnel(
                 f"WeibullAdstockEffect(max_lag=4) or GeometricAdstockEffect(). "
                 f"Offending: {[s.split(':')[-1] for s in bad]}"
             )
+
+    if lower is not None:
+        config.lower_funnel_vars_per_dim[dim] = lower_slugs
+    if given is not None:
         config.upper_funnel_adstock_effect_per_dim[dim] = {
             s: given.get(s) or WeibullAdstockEffect(max_lag=default_max_lag)
             for s in upper_slugs
         }
     elif isinstance(config.upper_funnel_adstock_effect_per_dim.get(dim), dict):
-        # A variable that just moved to lower funnel would leave a stale key
-        # here, and Raven only complains at fit time -- blaming diagnostics.
+        existing = config.upper_funnel_adstock_effect_per_dim[dim]
         config.upper_funnel_adstock_effect_per_dim[dim] = {
-            s: eff
-            for s, eff in config.upper_funnel_adstock_effect_per_dim[dim].items()
-            if s in set(upper_slugs)
+            s: existing[s] if s in existing else WeibullAdstockEffect(max_lag=default_max_lag)
+            for s in upper_slugs
         }
 
     if verbose:
