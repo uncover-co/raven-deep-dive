@@ -19,7 +19,7 @@ import pandas as pd
 
 from config import DeepDiveConfig, build_config, load_yaml
 from diagnostics import run_diagnostics
-from extraction import UpgradeResult, load_upgrade_auto, load_breakdown_spend
+from extraction import UpgradeResult, load_upgrade_auto, load_breakdown_data
 from pipeline import DDResult, run_deep_dive
 from report import generate_report
 
@@ -91,7 +91,7 @@ def run_single_client(
 
         all_vars = [v for slugs in config.vars_per_dim.values() for v in slugs]
         print(f"  Loading breakdown spend ({len(all_vars)} vars)...")
-        upgrade.spend_df = load_breakdown_spend(
+        upgrade.spend_df = load_breakdown_data(
             workspace_dd, all_vars, start_date, end_date, data_version=data_version
         )
 

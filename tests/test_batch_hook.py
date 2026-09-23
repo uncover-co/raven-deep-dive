@@ -22,7 +22,7 @@ def _patched(monkeypatch, recorder):
              "model_type": "stan", "start_date": "2023-01-02", "end_date": "2024-01-01"}
     monkeypatch.setattr(batch, "load_yaml", lambda *a, **k: specs)
     monkeypatch.setattr(batch, "load_upgrade_auto", lambda *a, **k: upgrade)
-    monkeypatch.setattr(batch, "load_breakdown_spend", lambda *a, **k: None)
+    monkeypatch.setattr(batch, "load_breakdown_data", lambda *a, **k: None)
     monkeypatch.setattr(batch, "build_config", lambda *a, **k: cfg_in)
     monkeypatch.setattr(batch, "run_diagnostics", lambda c, u: (cfg_in, diag))
     monkeypatch.setattr(batch, "generate_report", lambda *a, **k: None)

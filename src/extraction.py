@@ -15,7 +15,7 @@ ModelType = Literal["stan", "meridian", "raven"]
 class UpgradeResult:
     model: Any
     contrib_df: pd.DataFrame        # all channel contributions, index=timestamp
-    spend_df: pd.DataFrame          # breakdown-level spend (populated by load_breakdown_spend)
+    spend_df: pd.DataFrame          # breakdown-level spend + aux metric (populated by load_breakdown_data)
     mmm_config: dict                # {media_features, control_features, target, ...}
     model_type: ModelType = "stan"  # "stan" | "meridian" | "raven"
     input_df: pd.DataFrame | None = None  # raw input_data.parquet (main model's own features)
@@ -212,7 +212,7 @@ def load_upgrade_auto(
     raise ValueError(f"Unknown model_type='{model_type}'. Use 'stan', 'meridian', or 'raven'.")
 
 
-def load_breakdown_spend(
+def load_breakdown_data(
     workspace: str,
     all_vars: list[str],
     start_date: datetime,
@@ -221,7 +221,7 @@ def load_breakdown_spend(
     timezone: str = "America/Sao_Paulo",
     data_version: str | None = None,
 ) -> pd.DataFrame:
-    """Load breakdown-level spend data for all Deep Dive variables.
+    """Load breakdown-level spend + auxiliary metric data for all Deep Dive variables.
 
     Wraps ducks' build_modelling_dataset (the maintained replacement for the
     legacy mammoth BuildDefaultDataset). Returns DataFrame with timestamp

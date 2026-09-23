@@ -100,13 +100,13 @@ def test_load_raven_upgrade_reads_unadstocked_and_ignores_the_scaler():
     assert abs(float(weekly.iloc[1]) - 25.0) < 1e-6
 
 
-def test_load_breakdown_spend_drops_all_zero_columns_and_pins_data_version():
+def test_load_breakdown_data_drops_all_zero_columns_and_pins_data_version():
     """zero_fill="media" (ducks) matches metric names by substring
     ("$metric:investments"/"$metric:impressions"); our actual slugs (e.g.
     "$metric:w:investments---tiktok-mmm$...") never match that, so we pass
     zero_fill=True instead -- fills every column regardless of naming,
     matching the pre-ducks behavior."""
-    from extraction import load_breakdown_spend
+    from extraction import load_breakdown_data
 
     idx = pd.date_range("2024-01-01", periods=3, freq="W-MON")
     fake_df = pd.DataFrame({
@@ -118,7 +118,7 @@ def test_load_breakdown_spend_drops_all_zero_columns_and_pins_data_version():
     mock_ws.build_modelling_dataset.return_value = fake_df
 
     with patch("ducks.workspace", return_value=mock_ws) as mock_workspace:
-        result = load_breakdown_spend(
+        result = load_breakdown_data(
             "some-workspace",
             ["$metric:w:investments---tiktok-mmm$category:a", "$metric:w:investments---tiktok-mmm$category:b"],
             datetime(2024, 1, 1), datetime(2024, 1, 21),
