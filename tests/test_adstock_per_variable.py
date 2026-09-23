@@ -135,7 +135,7 @@ def test_per_variable_adstock_end_to_end_produces_different_decay():
             },
         },
     )
-    config, diag = run_diagnostics(config, upgrade, min_spend_share=0.0)
+    config, diag = run_diagnostics(config, upgrade, min_aux_share=0.0)
     result = run_deep_dive(config, upgrade, diag.auxiliary_metric_dfs, verbose=False)
 
     contribs = result.contribs["TestDim"]

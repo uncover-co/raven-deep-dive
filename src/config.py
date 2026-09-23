@@ -18,7 +18,7 @@ class DeepDiveConfig:
     share_prior_scale: float = 0.05
     proxy_ct_tolerance: float = 0.15
     num_steps: int = 30_000
-    min_spend_share: float = 0.02
+    min_aux_share: float = 0.02
     hhi_threshold: float = 0.85
     min_active_weeks: int = 2          # piso absoluto (séries curtas); ver min_active_weeks_frac
     min_active_weeks_frac: float = 0.05  # piso relativo: max(min_active_weeks, frac * n_weeks)
@@ -222,7 +222,7 @@ def build_config(
         share_prior_scale=cfg.get("share_prior_scale", 0.05),
         proxy_ct_tolerance=cfg.get("proxy_ct_tolerance", 0.15),
         num_steps=cfg.get("num_steps", 30_000),
-        min_spend_share=cfg.get("min_spend_share", 0.02),
+        min_aux_share=cfg.get("min_aux_share", 0.02),
         hhi_threshold=cfg.get("hhi_threshold", 0.85),
         min_active_weeks=cfg.get("min_active_weeks", 2),
         min_active_weeks_frac=cfg.get("min_active_weeks_frac", 0.05),

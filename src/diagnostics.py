@@ -24,7 +24,7 @@ class DiagnosisResult:
 def run_diagnostics(
     config: DeepDiveConfig,
     upgrade: UpgradeResult,
-    min_spend_share: float | None = None,
+    min_aux_share: float | None = None,
     hhi_threshold: float | None = None,
     min_active_weeks: int | None = None,
     min_active_weeks_frac: float | None = None,
@@ -35,7 +35,7 @@ def run_diagnostics(
 
     Side-effect: adds __others__ columns to upgrade.spend_df for bucketed dims.
     """
-    min_spend_share = min_spend_share if min_spend_share is not None else config.min_spend_share
+    min_aux_share = min_aux_share if min_aux_share is not None else config.min_aux_share
     hhi_threshold = hhi_threshold if hhi_threshold is not None else config.hhi_threshold
     min_active_weeks = min_active_weeks if min_active_weeks is not None else config.min_active_weeks
     min_active_weeks_frac = (
@@ -135,8 +135,8 @@ def run_diagnostics(
             pct = d["total"] / cat_total if cat_total > 0 else 0.0
             if d["total"] == 0:
                 keep, reason, rc = False, f"no signal in {aux_metric}", "no_gate_signal"
-            elif pct < min_spend_share:
-                keep, reason, rc = False, f"pct {pct:.1%} < {min_spend_share:.0%} ({aux_metric})", "low_pct"
+            elif pct < min_aux_share:
+                keep, reason, rc = False, f"pct {pct:.1%} < {min_aux_share:.0%} ({aux_metric})", "low_pct"
             elif d["active"] < effective_min_weeks:
                 keep, reason, rc = False, f"only {d['active']} week(s) < {effective_min_weeks} ({aux_metric})", "low_weeks"
             elif primary_stats[slug]["total"] == 0:
@@ -236,7 +236,7 @@ def run_diagnostics(
     upgrade.spend_df = df
 
     spend_report = pd.DataFrame(rows)
-    _print_diagnosis(spend_report, min_spend_share, hhi_threshold, len(bucketed), bucketed)
+    _print_diagnosis(spend_report, min_aux_share, hhi_threshold, len(bucketed), bucketed)
     _print_model_composition(
         new_vars_per_dim, new_lower_funnel_vars_per_dim, bucketed, bucket_notes,
         bucket_info,
@@ -254,7 +254,7 @@ def run_diagnostics(
         share_prior_scale=config.share_prior_scale,
         proxy_ct_tolerance=config.proxy_ct_tolerance,
         num_steps=config.num_steps,
-        min_spend_share=min_spend_share,
+        min_aux_share=min_aux_share,
         hhi_threshold=hhi_threshold,
         min_active_weeks=min_active_weeks,
         min_active_weeks_frac=min_active_weeks_frac,
