@@ -101,8 +101,11 @@ def run_diagnostics(
         slugs = [s for s in all_slugs if s.startswith(metric_prefix)]
 
         if not slugs:
-            skipped_dims.append(dim)
-            continue
+            raise ValueError(
+                f"[{dim}] no '{spend_metric}' data for this dimension -- can't "
+                "build the investment regressor. Fix the extraction upstream, "
+                "or drop this dim from vars_per_dim if it's not meant to be modelled."
+            )
 
         tail_of = {slug: slug[len(metric_prefix):] for slug in slugs}
         primary_stats: dict[str, dict] = _stats_for(metric_prefix, tail_of)
