@@ -71,6 +71,46 @@ def test_bucketed_raw_has_original_per_member_series():
     assert len(df) == 104
 
 
+def test_others_bucket_aux_df_sums_members_aux_not_investment():
+    """diag.auxiliary_metric_dfs[__others__] must sum the bucketed members'
+    auxiliary_metric series, not their investment series -- regression guard
+    for the aux_dfs/df[others_col] loops sharing the same kept/excl instead
+    of drifting apart."""
+    idx = pd.date_range("2023-01-02", periods=52, freq="W-MON")
+    rng = np.random.default_rng(42)
+    spend = pd.DataFrame({
+        "$metric:invest$category:praca:sp":  rng.random(52) * 1000,
+        "$metric:invest$category:praca:rj":  rng.random(52) * 200,
+        "$metric:invest$category:praca:rec": rng.random(52) * 50,
+        "$metric:invest$category:praca:go":  rng.random(52) * 50,
+        "$metric:impr$category:praca:sp":    rng.random(52) * 900,
+        "$metric:impr$category:praca:rj":    rng.random(52) * 900,
+        "$metric:impr$category:praca:rec":   rng.random(52) * 5,   # < 2% share → excluded
+        "$metric:impr$category:praca:go":    rng.random(52) * 5,   # < 2% share → excluded
+    }, index=idx)
+    cfg = DeepDiveConfig(
+        dims=["Praca"],
+        vars_per_dim={"Praca": [c for c in spend.columns if c.startswith("$metric:invest")]},
+        media_var="eletro_total",
+        vehicle_spec={"default_metric": "invest"},
+        auxiliary_metric="impr",
+    )
+    eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
+    contrib_df = spend.copy()
+    contrib_df["eletro_total"] = eletro
+    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={})
+
+    new_cfg, diag = run_diagnostics(cfg, upgrade, min_aux_share=0.02)
+    others_col = next(v for v in new_cfg.vars_per_dim["Praca"] if v.startswith("__others__"))
+
+    expected_aux = (
+        spend["$metric:impr$category:praca:rec"] + spend["$metric:impr$category:praca:go"]
+    )
+    pd.testing.assert_series_equal(
+        diag.auxiliary_metric_dfs["Praca"][others_col], expected_aux, check_names=False,
+    )
+
+
 def test_others_inherits_lower_funnel_when_bucket_fully_lower():
     """Both bucketed members (rec, go) are configured lower funnel -> the
     __others__ aggregate is unambiguous, inherits lower funnel too."""

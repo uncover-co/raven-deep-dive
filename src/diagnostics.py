@@ -156,15 +156,24 @@ def run_diagnostics(
                 excl.append(slug)
 
         if kept:
+            # aux series for the slugs that survive as-is (not bucketed); the
+            # __others__ entry, if any, is added alongside its df[others_col]
+            # counterpart below -- same block, same members, no re-parsing.
+            aux_cols: dict[str, pd.Series] = {
+                slug: (df[aux_prefix + tail_of[slug]] if aux_prefix + tail_of[slug] in df.columns
+                       else pd.Series(0.0, index=df.index))
+                for slug in kept
+            }
+
             if len(excl) > 1:
                 others_col = f"__others__{sanitize_dim_name(dim)}"
                 df[others_col] = df[excl].sum(axis=1)
                 kept.append(others_col)
                 bucketed[dim] = excl
 
-                # Audit-only: original per-member series before the __others__
-                # aggregation, so a human can trace what went into that bucket.
-                # Never fed to the model -- see aux_dfs below for that.
+                # Per-member aux series, pre-aggregation -- feeds both the
+                # audit trail (bucketed_raw) and, summed, the model-facing
+                # aux_dfs entry for others_col right below.
                 inv_orig = df[excl]
                 aux_orig_cols = {
                     m: (df[aux_prefix + tail_of[m]] if aux_prefix + tail_of[m] in df.columns
@@ -172,6 +181,7 @@ def run_diagnostics(
                     for m in excl
                 }
                 aux_orig = pd.DataFrame(aux_orig_cols, index=df.index)
+                aux_cols[others_col] = aux_orig.sum(axis=1)
                 inv_long = (
                     inv_orig.rename_axis("date").reset_index()
                     .melt(id_vars="date", var_name="variable", value_name="investment")
@@ -219,17 +229,6 @@ def run_diagnostics(
                     "default_upper": [v for v in excl if v not in configured_lower],
                 }
             new_vars_per_dim[dim] = kept
-
-            aux_cols = {}
-            for slug in new_vars_per_dim[dim]:
-                if slug.startswith("__others__"):
-                    members = bucketed.get(dim, [])
-                    aux_slugs = [aux_prefix + m[len(metric_prefix):] for m in members]
-                    present = [a for a in aux_slugs if a in df.columns]
-                    aux_cols[slug] = df[present].sum(axis=1) if present else pd.Series(0.0, index=df.index)
-                else:
-                    aux_slug = aux_prefix + slug[len(metric_prefix):]
-                    aux_cols[slug] = df[aux_slug] if aux_slug in df.columns else pd.Series(0.0, index=df.index)
             aux_dfs[dim] = pd.DataFrame(aux_cols, index=df.index)
 
     # Update spend_df in-place so downstream pipeline sees __others__ cols
