@@ -175,6 +175,7 @@ def _run_raven_dim(
                 weight_decay=1e-4,
             ),
             num_steps=num_steps,
+            num_samples=1,
             stable_update=True,
             rng_key=jax.random.PRNGKey(0),
         ),
