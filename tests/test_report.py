@@ -71,6 +71,34 @@ def test_model_inputs_csv_has_investment_and_auxiliary_metric_per_variable():
         assert sp_row["auxiliary_metric"] == 100.0
 
 
+def test_weekly_contributions_csv_has_contrib_and_spend_per_week():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        paths = generate_report(_fake_result(), output_dir=tmpdir, client_name="Test")
+        df = pd.read_csv(paths["csv_weekly_contributions"])
+        assert list(df.columns) == ["dim", "level", "item", "date", "contrib", "spend"]
+        assert len(df) == 20
+        assert set(df["item"]) == {"sp", "rj"}
+        row = df[(df["item"] == "rj") & (df["date"] == "2023-01-02")].iloc[0]
+        assert row["contrib"] == 0.5
+        assert row["spend"] == 5.0
+
+
+def test_weekly_contributions_df_includes_rollup_levels():
+    from report import _build_weekly_contributions_df
+
+    result = _fake_result()
+    idx = result.contribs["Praca"].index
+    rollup_c = {"Praca": {"regiao": pd.DataFrame({"sudeste": np.ones(10) * 1.5}, index=idx)}}
+    rollup_s = {"Praca": {"regiao": pd.DataFrame({"sudeste": np.ones(10) * 15}, index=idx)}}
+    df = _build_weekly_contributions_df(result, rollup_c, rollup_s)
+    sub = df[df["level"] == "regiao"]
+    assert len(sub) == 10
+    assert set(sub["item"]) == {"sudeste"}
+    assert (sub["contrib"] == 1.5).all()
+    assert (sub["spend"] == 15).all()
+    assert len(df[df["level"] == "Praca"]) == 20
+
+
 def _empty_spend_report() -> pd.DataFrame:
     return pd.DataFrame(columns=[
         "dim", "slug", "reason", "reason_code", "active_weeks", "gate_total", "pct_gate_dim",

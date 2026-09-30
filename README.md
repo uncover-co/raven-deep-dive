@@ -250,6 +250,7 @@ Output dir: `outputs/{cliente}_{vehicle}/` (gerado por `generate_report()`)
 |---|---|
 | `metadata.csv` | model_name, client, vehicle, upgrade_run_id, dd_date, period_start, period_end |
 | `contributions.csv` | dim, item, contrib_share, spend_share, roas_index (+ rollups quando `vehicle_spec` tem hierarquia) |
+| `weekly_contributions.csv` | dim, level, item, date, contrib, spend — série semanal por item (`level` = a própria dim no nível atômico, ou o nome do rollup quando `vehicle_spec` tem hierarquia) |
 | `diagnostics.csv` | Saída de `run_diagnostics`: status (kept/discarded_*/others_aggregate), reason, active_weeks, gate_total — só se `diag` for passado |
 | `hill_params.csv` | Parâmetros Hill (max_effect, half_max, slope) por variável e dimensão |
 | `model_inputs.csv` | dim, variable, date, investment, auxiliary_metric — exatamente o que entrou no fit de cada dim (já pós-diagnóstico: `__others__<dim>` no lugar dos membros absorvidos) |
