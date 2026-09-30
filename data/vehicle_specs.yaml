@@ -7,6 +7,7 @@ vehicles:
   tiktok_stellantis:
     vehicle_slug: tiktok
     default_metric: "w:investments---tiktok-mmm"
+    auxiliary_metric: "w:impressions---tiktok-mmm"
 
     # Modela só na granularidade máxima; product_level_2 é derivado por rollup
     # via hierarquia declarada em product_level_3.

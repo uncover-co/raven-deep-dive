@@ -37,8 +37,10 @@ UNCOVER_DARK_TEMPLATE = go.layout.Template(layout=go.Layout(**_LAYOUT_DEFAULTS))
 
 def _styled(fig: go.Figure) -> go.Figure:
     fig.update_layout(**_LAYOUT_DEFAULTS)
-    for ax in ["xaxis", "yaxis", "xaxis2", "yaxis2"]:
-        fig.update_layout(**{ax: dict(gridcolor="#2A2A2A", zerolinecolor="#2A2A2A")})
+    # Every axis the figure actually has -- a hardcoded xaxis/xaxis2 pair left
+    # subplots 3+ on plotly's default white grid.
+    fig.update_xaxes(gridcolor="#2A2A2A", zerolinecolor="#2A2A2A")
+    fig.update_yaxes(gridcolor="#2A2A2A", zerolinecolor="#2A2A2A")
     return fig
 
 
@@ -260,9 +262,19 @@ def plot_roas_index(result) -> go.Figure:
 
 # ── Helpers: label + summary ──────────────────────────────────────────────────
 
-def _clean_label(s: str) -> str:
+def _clean_label(s: str, category: str | None = None) -> str:
+    """Display name for a slug.
+
+    Pass `category` whenever the caller knows it. Without it the last `$`
+    segment is the only guess available, and that is the breakdown value only
+    when `{value}` ends the template -- `state_template` and tiktok's
+    `campaign_category` both put it in the middle, so every item would come
+    out labelled "bradesco" / "tiktok".
+    """
     if not s.startswith("$"):
         return s
+    if category:
+        return _slug_val(s, category)
     parts = s.split("$")
     return parts[-1].split(":")[-1] if parts else s
 
@@ -288,8 +300,9 @@ def _print_breakdown_summary(result, dim: str) -> None:
     print(f"{'─'*66}")
     print(f"  {'Sub-channel':<30} {'Absolute':>12}  {'% anchor':>9}")
     print(f"{'─'*66}")
+    _cat = _dim_category(result, dim)
     for col in contribs.columns:
-        label = _clean_label(col)
+        label = _clean_label(col, _cat)
         val = float(contribs[col].sum())
         pct = val / total_anchor * 100 if total_anchor else float("nan")
         print(f"  {label:<30} {val:>12,.0f}  {pct:>8.1f}%")
@@ -313,9 +326,10 @@ def plot_breakdown_total(result, dim: str) -> go.Figure:
 
     fig = go.Figure()
     cumulative = 0.0
+    _cat = _dim_category(result, dim)
     for i, col in enumerate(contribs.columns):
         val = float(totals[col])
-        label = _clean_label(col)
+        label = _clean_label(col, _cat)
         pct = val / total_anchor * 100 if total_anchor else 0.0
         fig.add_trace(go.Bar(
             x=[val],
@@ -406,10 +420,10 @@ def _rollup_order_for_dim(
     return result
 
 
-def _short_label(s: str, maxlen: int = 30) -> str:
-    """Strip $metric slug prefix and truncate."""
+def _short_label(s: str, maxlen: int = 30, category: str | None = None) -> str:
+    """Strip $metric slug prefix and truncate. See `_clean_label` on `category`."""
     if s.startswith("$"):
-        s = s.split("$")[-1].split(":")[-1]
+        s = _slug_val(s, category) if category else s.split("$")[-1].split(":")[-1]
     return s[:maxlen]
 
 
@@ -429,6 +443,7 @@ def plot_batch_dim(
     """
     clients       = sorted(df_dim["client"].unique())
     rollup_levels = _rollup_order_for_dim(dim, vehicle_spec or {}, df_dim)
+    cat           = _spec_category(vehicle_spec, dim)
 
     n_rows   = len(rollup_levels)
     row_h    = [_row_height(len(df_dim[df_dim["rollup"] == rl]["item"].unique()))
@@ -463,7 +478,7 @@ def plot_batch_dim(
             .sort_values(ascending=True)  # ascending for horizontal bar (bottom=lowest)
             .index.tolist()
         )
-        y_labels = [_short_label(it) for it in item_order]
+        y_labels = [_short_label(it, category=cat) for it in item_order]
 
         for ci, client in enumerate(clients):
             df_c  = df_r[df_r["client"] == client].set_index("item")
@@ -552,6 +567,7 @@ def _print_batch_dim_summary(
 ) -> None:
     """Print tabular summary for one dimension across all clients."""
     rollup_levels = _rollup_order_for_dim(dim, vehicle_spec or {}, df_dim)
+    cat = _spec_category(vehicle_spec, dim)
 
     for rollup in rollup_levels:
         df_r   = df_dim[df_dim["rollup"] == rollup]
@@ -572,7 +588,7 @@ def _print_batch_dim_summary(
         print(f"  {'─'*78}")
 
         for item in items:
-            row_str = f"  {_short_label(item):<28}"
+            row_str = f"  {_short_label(item, category=cat):<28}"
             for c in clients:
                 sub = df_r[(df_r["client"] == c) & (df_r["item"] == item)]
                 if sub.empty:
@@ -635,6 +651,17 @@ def analyze_batch(
 
 
 # ── Tree (sunburst / treemap) visualization ────────────────────────────────────
+
+def _spec_category(vehicle_spec: dict | None, dim: str) -> str:
+    """The breakdown's `category`, so labels don't fall back to the last segment."""
+    return (vehicle_spec or {}).get("breakdowns", {}).get(dim, {}).get("category", "")
+
+
+def _dim_category(result, dim: str) -> str:
+    return _spec_category(
+        getattr(getattr(result, "config", None), "vehicle_spec", None), dim
+    )
+
 
 def _slug_val(slug: str, category: str) -> str:
     """Extract clean dimension value from raw slug."""
@@ -752,6 +779,19 @@ def _groups_sunburst(
                 node_s[prefix] = node_s.get(prefix, 0.0) + ss
                 node_parent[prefix] = parent
 
+    # A leaf belonging to no declared group would just vanish, and
+    # `__others__<dim>` never appears in the spec's `grupos:` by construction.
+    # Dropping it shrinks the root total, so every "percent root" and every
+    # ROAS colour ends up renormalised against the wrong base.
+    placed = {m for g in groups_spec.values() for m in g.get(members_key, [])}
+    for member, sm in leaf_m.items():
+        if member in placed:
+            continue
+        mpath = (member,)
+        node_m[mpath] = node_m.get(mpath, 0.0) + sm
+        node_s[mpath] = node_s.get(mpath, 0.0) + leaf_s.get(member, 0.0)
+        node_parent[mpath] = ()
+
     ids, labels, parents, vals_m, vals_s = [], [], [], [], []
     for path, sm in node_m.items():
         node_id = "/".join(str(p) for p in path)
@@ -766,10 +806,24 @@ def _groups_sunburst(
     return dict(ids=ids, labels=labels, parents=parents, values_m=vals_m, values_s=vals_s)
 
 
-def _roas_colors(vals_m: list[float], vals_s: list[float]) -> list[float]:
-    """Compute per-node ROAS index for sunburst coloring."""
-    total_m = sum(vals_m) or 1.0
-    total_s = sum(vals_s) or 1.0
+def _roas_colors(
+    vals_m: list[float],
+    vals_s: list[float],
+    parents: list[str] | None = None,
+) -> list[float]:
+    """Compute per-node ROAS index for sunburst coloring.
+
+    Normalise against the root. Summing every node counts a grouped leaf once
+    per ancestor level and an ungrouped one only once, so the global factor
+    lands on the wrong base and shifts every colour.
+    """
+    if parents is not None:
+        roots = [i for i, p in enumerate(parents) if not p]
+        total_m = sum(vals_m[i] for i in roots) or 1.0
+        total_s = sum(vals_s[i] for i in roots) or 1.0
+    else:
+        total_m = sum(vals_m) or 1.0
+        total_s = sum(vals_s) or 1.0
     colors = []
     for sm, ss in zip(vals_m, vals_s):
         sm_n = sm / total_m
@@ -802,11 +856,26 @@ def plot_tree_dim(
     rollup_specs = bd_spec.get("rollups", [])
     hierarchy = vehicle_spec.get("hierarchy", {})
 
-    # Pick best hierarchy: groups (full tree) > flat map > nothing
-    groups_rspec = next(
-        (r for r in rollup_specs if "groups" in r and "attr" not in r), None
-    )
-    map_rspec = next((r for r in rollup_specs if "map" in r), None)
+    # Pick best hierarchy: groups (full tree) > flat map > nothing.
+    # A declared key that isn't in `hierarchy` is a typo, not an empty tree:
+    # falling back to {} sends every leaf to the ungrouped branch and draws a
+    # flat wheel that looks like a legitimate result. batch.rollup_contribs_ts
+    # raises on the same mistake.
+    def _pick(kind: str, extra=lambda r: True):
+        for r in rollup_specs:
+            if kind not in r or not extra(r):
+                continue
+            if r[kind] not in hierarchy:
+                raise ValueError(
+                    f"[{dim}] rollup '{r.get('level', kind)}' references {kind} "
+                    f"'{r[kind]}' not found in hierarchy. "
+                    f"Available: {list(hierarchy.keys())}."
+                )
+            return r
+        return None
+
+    groups_rspec = _pick("groups", lambda r: "attr" not in r)
+    map_rspec = _pick("map")
 
     if not groups_rspec and not map_rspec:
         return None
@@ -828,14 +897,14 @@ def plot_tree_dim(
             continue
 
         if groups_rspec:
-            groups_data = hierarchy.get(groups_rspec["groups"], {})
+            groups_data = hierarchy[groups_rspec["groups"]]
             data = _groups_sunburst(sh_m, sh_s, category, groups_data,
                                     groups_rspec.get("members_key", "values"))
         else:
-            flat_map = hierarchy.get(map_rspec["map"], {})
+            flat_map = hierarchy[map_rspec["map"]]
             data = _flat_map_sunburst(sh_m, sh_s, category, flat_map)
 
-        colors = _roas_colors(data["values_m"], data["values_s"])
+        colors = _roas_colors(data["values_m"], data["values_s"], data["parents"])
         show_scale = ci == n
 
         marker_kwargs: dict = dict(
@@ -942,13 +1011,9 @@ def analyze_trees(
         for dim in all_dims:
             bd_spec = breakdowns.get(dim, {})
             rollup_specs = bd_spec.get("rollups", [])
-            has_groups = any(
-                "groups" in r and hierarchy.get(r["groups"]) for r in rollup_specs
-            )
-            has_map = any(
-                "map" in r and hierarchy.get(r["map"]) for r in rollup_specs
-            )
-            if not has_groups and not has_map:
+            # Only whether a hierarchy is declared -- plot_tree_dim decides
+            # whether the key resolves, and raises on a typo.
+            if not any("groups" in r or "map" in r for r in rollup_specs):
                 continue
 
             fig = plot_tree_dim(dim, veh_results, vehicle_spec, chart_type=chart_type)
@@ -969,3 +1034,52 @@ def analyze_trees(
             figs[key] = fig
 
     return figs
+
+
+# ── Spend coverage: reference vs sum of breakdowns ───────────────────────────
+
+def plot_spend_coverage(report: pd.DataFrame, title: str = "") -> go.Figure:
+    """Overlay the reference spend against the sum of the breakdowns, per dim.
+
+    Takes the report from `diagnostics.check_spend_coverage()`, which carries
+    the series in `report.attrs["series"]`. A gap that is flat across the
+    window reads very differently from one concentrated in a few weeks, and
+    only the lines show which of the two it is.
+    """
+    series = report.attrs.get("series") or {}
+    if not series:
+        raise ValueError(
+            "report has no series -- it must come from check_spend_coverage()."
+        )
+    dims = list(dict.fromkeys(dim for dim, _ in series))
+    fig = make_subplots(
+        rows=len(dims), cols=1, shared_xaxes=False,
+        subplot_titles=[str(d) for d in dims], vertical_spacing=0.10,
+    )
+    ref_style = {"workspace": "dot", "upgrade": "dash"}
+    shown: set[str] = set()
+
+    for r, dim in enumerate(dims, start=1):
+        pairs = {ref: v for (d, ref), v in series.items() if d == dim}
+        _, dim_series = next(iter(pairs.values()))
+        fig.add_trace(go.Scatter(
+            x=dim_series.index, y=dim_series.values,
+            name="sum of breakdowns", legendgroup="breakdowns",
+            showlegend="breakdowns" not in shown,
+            mode="lines", line=dict(color=UNCOVER_COLORS[0], width=2),
+        ), row=r, col=1)
+        shown.add("breakdowns")
+        for ref, (ref_series, _) in pairs.items():
+            fig.add_trace(go.Scatter(
+                x=ref_series.index, y=ref_series.values,
+                name=f"reference ({ref})", legendgroup=ref,
+                showlegend=ref not in shown,
+                mode="lines",
+                line=dict(color="#FFFFFF", width=2, dash=ref_style.get(ref, "dot")),
+            ), row=r, col=1)
+            shown.add(ref)
+
+    fig.update_layout(title=title or "Spend coverage — reference vs. sum of breakdowns")
+    fig = _styled(fig)
+    fig.update_layout(height=max(320 * len(dims), 360))
+    return fig

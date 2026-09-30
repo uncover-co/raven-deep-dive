@@ -21,7 +21,7 @@ def _make_fixtures():
         dims=["Praca"],
         vars_per_dim={"Praca": list(spend.columns)},
         media_var="eletro_total",
-        share_likelihood_metric="invest",
+        vehicle_spec={"default_metric": "invest"},
         auxiliary_metric="invest",
     )
     eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
@@ -32,21 +32,20 @@ def _make_fixtures():
         contrib_df=contrib_df,
         spend_df=spend,
         mmm_config={},
-        y_hat=eletro,
     )
     return cfg, upgrade
 
 
 def test_run_diagnostics_returns_types():
     cfg, upgrade = _make_fixtures()
-    new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    new_cfg, diag = run_diagnostics(cfg, upgrade, min_aux_share=0.02)
     assert isinstance(diag, DiagnosisResult)
     assert isinstance(new_cfg, DeepDiveConfig)
 
 
 def test_tiny_vars_bucketed_into_others():
     cfg, upgrade = _make_fixtures()
-    new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    new_cfg, diag = run_diagnostics(cfg, upgrade, min_aux_share=0.02)
     praca_vars = new_cfg.vars_per_dim.get("Praca", [])
     # rec, go < 2% → should NOT be in kept vars
     assert "$metric:invest$category:praca:rec" not in praca_vars
@@ -62,7 +61,7 @@ def test_bucketed_raw_has_original_per_member_series():
     """diag.bucketed_raw exposes the original (pre-aggregation) investment +
     auxiliary_metric series for each __others__ member, for audit purposes."""
     cfg, upgrade = _make_fixtures()
-    _, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    _, diag = run_diagnostics(cfg, upgrade, min_aux_share=0.02)
     df = diag.bucketed_raw["Praca"]
     assert set(df.columns) == {"date", "variable", "investment", "auxiliary_metric"}
     assert set(df["variable"]) == {
@@ -72,6 +71,46 @@ def test_bucketed_raw_has_original_per_member_series():
     assert len(df) == 104
 
 
+def test_others_bucket_aux_df_sums_members_aux_not_investment():
+    """diag.auxiliary_metric_dfs[__others__] must sum the bucketed members'
+    auxiliary_metric series, not their investment series -- regression guard
+    for the aux_dfs/df[others_col] loops sharing the same kept/excl instead
+    of drifting apart."""
+    idx = pd.date_range("2023-01-02", periods=52, freq="W-MON")
+    rng = np.random.default_rng(42)
+    spend = pd.DataFrame({
+        "$metric:invest$category:praca:sp":  rng.random(52) * 1000,
+        "$metric:invest$category:praca:rj":  rng.random(52) * 200,
+        "$metric:invest$category:praca:rec": rng.random(52) * 50,
+        "$metric:invest$category:praca:go":  rng.random(52) * 50,
+        "$metric:impr$category:praca:sp":    rng.random(52) * 900,
+        "$metric:impr$category:praca:rj":    rng.random(52) * 900,
+        "$metric:impr$category:praca:rec":   rng.random(52) * 5,   # < 2% share → excluded
+        "$metric:impr$category:praca:go":    rng.random(52) * 5,   # < 2% share → excluded
+    }, index=idx)
+    cfg = DeepDiveConfig(
+        dims=["Praca"],
+        vars_per_dim={"Praca": [c for c in spend.columns if c.startswith("$metric:invest")]},
+        media_var="eletro_total",
+        vehicle_spec={"default_metric": "invest"},
+        auxiliary_metric="impr",
+    )
+    eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
+    contrib_df = spend.copy()
+    contrib_df["eletro_total"] = eletro
+    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={})
+
+    new_cfg, diag = run_diagnostics(cfg, upgrade, min_aux_share=0.02)
+    others_col = next(v for v in new_cfg.vars_per_dim["Praca"] if v.startswith("__others__"))
+
+    expected_aux = (
+        spend["$metric:impr$category:praca:rec"] + spend["$metric:impr$category:praca:go"]
+    )
+    pd.testing.assert_series_equal(
+        diag.auxiliary_metric_dfs["Praca"][others_col], expected_aux, check_names=False,
+    )
+
+
 def test_others_inherits_lower_funnel_when_bucket_fully_lower():
     """Both bucketed members (rec, go) are configured lower funnel -> the
     __others__ aggregate is unambiguous, inherits lower funnel too."""
@@ -79,7 +118,7 @@ def test_others_inherits_lower_funnel_when_bucket_fully_lower():
     cfg.lower_funnel_vars_per_dim = {
         "Praca": ["$metric:invest$category:praca:rec", "$metric:invest$category:praca:go"],
     }
-    new_cfg, _ = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    new_cfg, _ = run_diagnostics(cfg, upgrade, min_aux_share=0.02)
     others_col = next(v for v in new_cfg.vars_per_dim["Praca"] if v.startswith("__others__"))
     assert new_cfg.lower_funnel_vars_per_dim["Praca"] == [others_col]
 
@@ -92,7 +131,7 @@ def test_others_stays_upper_when_bucket_mixed():
     cfg.lower_funnel_vars_per_dim = {
         "Praca": ["$metric:invest$category:praca:rec"],
     }
-    new_cfg, _ = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    new_cfg, _ = run_diagnostics(cfg, upgrade, min_aux_share=0.02)
     others_col = next(v for v in new_cfg.vars_per_dim["Praca"] if v.startswith("__others__"))
     assert others_col not in new_cfg.lower_funnel_vars_per_dim.get("Praca", [])
     # rec was bucketed away (no longer a standalone slug) -> stale entry dropped
@@ -111,7 +150,7 @@ def test_single_excluded_var_not_bucketed():
         dims=["Praca"],
         vars_per_dim={"Praca": list(spend.columns)},
         media_var="eletro_total",
-        share_likelihood_metric="invest",
+        vehicle_spec={"default_metric": "invest"},
         auxiliary_metric="invest",
     )
     eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
@@ -122,9 +161,8 @@ def test_single_excluded_var_not_bucketed():
         contrib_df=contrib_df,
         spend_df=spend,
         mmm_config={},
-        y_hat=eletro,
     )
-    new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    new_cfg, diag = run_diagnostics(cfg, upgrade, min_aux_share=0.02)
     praca_vars = new_cfg.vars_per_dim.get("Praca", [])
     # a single excluded var isn't a "group" → no __others__, just dropped
     assert "$metric:invest$category:praca:rec" not in praca_vars
@@ -158,15 +196,15 @@ def test_slug_without_primary_column_excluded_even_if_aux_available():
             "$metric:invest$category:praca:ghost",
         ]},
         media_var="eletro_total",
-        share_likelihood_metric="invest",
+        vehicle_spec={"default_metric": "invest"},
         auxiliary_metric="impr",
     )
     eletro = pd.Series(rng.random(52) * 100, index=idx, name="eletro_total")
     contrib_df = spend.copy()
     contrib_df["eletro_total"] = eletro
-    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={}, y_hat=eletro)
+    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={})
 
-    new_cfg, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    new_cfg, diag = run_diagnostics(cfg, upgrade, min_aux_share=0.02)
     ghost_slug = "$metric:invest$category:praca:ghost"
     assert ghost_slug not in new_cfg.vars_per_dim["Praca"]
     aux_df = diag.auxiliary_metric_dfs["Praca"]
@@ -177,18 +215,18 @@ def test_raises_when_auxiliary_metric_has_no_real_data_for_dim():
     cfg, upgrade = _make_fixtures()
     cfg.auxiliary_metric = "impr"  # no $metric:impr$... columns exist in spend
     with pytest.raises(ValueError, match="auxiliary_metric 'impr' has no real data"):
-        run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+        run_diagnostics(cfg, upgrade, min_aux_share=0.02)
 
 
 def test_raises_when_auxiliary_metric_not_set_on_config():
     cfg, upgrade = _make_fixtures()
     cfg.auxiliary_metric = ""
     with pytest.raises(ValueError, match="config.auxiliary_metric is not set"):
-        run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+        run_diagnostics(cfg, upgrade, min_aux_share=0.02)
 
 
 def test_spend_report_columns():
     cfg, upgrade = _make_fixtures()
-    _, diag = run_diagnostics(cfg, upgrade, min_spend_share=0.02)
+    _, diag = run_diagnostics(cfg, upgrade, min_aux_share=0.02)
     expected_cols = {"dim", "slug", "gate_total", "pct_gate_dim", "active_weeks", "hhi", "keep"}
     assert expected_cols.issubset(set(diag.spend_report.columns))

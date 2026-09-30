@@ -81,13 +81,13 @@ def test_run_diagnostics_preserves_upper_funnel_adstock_effect_per_dim():
         dims=["dim1"],
         vars_per_dim={"dim1": [slug_a, slug_b]},
         media_var="total",
-        share_likelihood_metric="m",
+        vehicle_spec={"default_metric": "m"},
         auxiliary_metric="m",
         upper_funnel_adstock_effect_per_dim={"dim1": marker},
     )
     contrib_df = spend.copy()
     contrib_df["total"] = rng.random(52) * 100
-    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={}, y_hat=None)
+    upgrade = UpgradeResult(model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={})
 
     new_cfg, _ = run_diagnostics(cfg, upgrade)
     assert new_cfg.upper_funnel_adstock_effect_per_dim == {"dim1": marker}
@@ -119,13 +119,13 @@ def test_per_variable_adstock_end_to_end_produces_different_decay():
     contrib_df["media_total"] = media_total
 
     upgrade = UpgradeResult(
-        model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={}, y_hat=None,
+        model=None, contrib_df=contrib_df, spend_df=spend, mmm_config={},
     )
     config = DeepDiveConfig(
         dims=["TestDim"],
         vars_per_dim={"TestDim": [slug_v1, slug_v2]},
         media_var="media_total",
-        share_likelihood_metric="invest",
+        vehicle_spec={"default_metric": "invest"},
         auxiliary_metric="invest",
         num_steps=300,
         upper_funnel_adstock_effect_per_dim={
@@ -135,7 +135,7 @@ def test_per_variable_adstock_end_to_end_produces_different_decay():
             },
         },
     )
-    config, diag = run_diagnostics(config, upgrade, min_spend_share=0.0)
+    config, diag = run_diagnostics(config, upgrade, min_aux_share=0.0)
     result = run_deep_dive(config, upgrade, diag.auxiliary_metric_dfs, verbose=False)
 
     contribs = result.contribs["TestDim"]

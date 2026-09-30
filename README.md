@@ -25,9 +25,9 @@ Para isso, ajusta um modelo Deep Dive Raven por dimensão de quebra, com dois ti
 ```
 deepdive/
 ├── src/
-│   ├── config.py                    # DeepDiveConfig + build_config() — parse YAML + UpgradeResult
+│   ├── config.py                    # DeepDiveConfig + build_config() + override_funnel() — funil/adstock pós-diagnóstico
 │   ├── extraction.py                # load_upgrade_stan/meridian/raven — parquets via MLflow
-│   ├── diagnostics.py               # run_diagnostics() — filtra variáveis, cria __others__
+│   ├── diagnostics.py               # run_diagnostics() — filtra variáveis, cria __others__; check_spend_coverage()
 │   ├── pipeline.py                  # run_deep_dive() — orquestrador por dimensão
 │   ├── plots.py                     # Plotly dark theme + analyze_deepdive/batch/trees
 │   ├── report.py                    # generate_report() — CSVs + HTMLs por cliente
@@ -77,7 +77,7 @@ MMM Base
 Cada dimensão é ajustada **independentemente**, mas todas usam o mesmo `C_t` como âncora. O pipeline opera em três etapas:
 
 1. **Extração** — `load_upgrade_stan` / `load_meridian_upgrade` / `load_raven_upgrade`: carrega `contrib_df` e `spend_df` via parquets MLflow.
-2. **Diagnóstico** — `run_diagnostics`: usa `auxiliary_metric` (obrigatório) como gate — filtra sub-canais com <2% nessa métrica, agrupa em `__others__`, calcula HHI e semanas ativas. Se o veículo não tem métrica de exposição real, o client YAML aponta `auxiliary_metric` pro mesmo valor de `share_likelihood_metric` (investimento como seu próprio proxy) — a escolha é feita na config, não em runtime. Se a dimensão não tiver dado real na métrica configurada, `run_diagnostics` levanta erro (sem fallback silencioso).
+2. **Diagnóstico** — `run_diagnostics`: usa `auxiliary_metric` (obrigatório) como gate — filtra sub-canais com <2% nessa métrica, agrupa em `__others__`, calcula HHI e semanas ativas. `auxiliary_metric` é declarado no `vehicle_specs.yaml`, ao lado do `default_metric` — é o que o veículo mede, não o que o cliente escolhe. Se o veículo não tem exposição real, aponta pro próprio `default_metric`. O client YAML pode sobrescrever (o build avisa quando isso acontece). Se a dimensão não tiver dado real na métrica configurada, `run_diagnostics` levanta erro (sem fallback silencioso).
 3. **Deep Dive Raven** — `run_deep_dive`: ajusta modelo Hill por dimensão, ancorado em `C_t`. Requer `auxiliary_metric_dfs` (de `diag.auxiliary_metric_dfs`) — não é opcional.
 
 ---
@@ -112,7 +112,6 @@ data_version: <nome_do_snapshot>  # opcional -- fixa a leitura num data version 
 start_date: 2022-01-03
 end_date: 2025-12-29
 media_var: $metric:investments$vehicle:eletromidia$category:brand:nome-da-marca
-auxiliary_metric: investments  # obrigatório -- métrica de exposição real (ex: impressions) quando o veículo tiver; senão, o mesmo valor do investimento
 ```
 
 **Registrar no registry** (formato multi-veículo, recomendado — `model_type` vem do client YAML, não do registry):
@@ -140,6 +139,13 @@ config         = build_config(upgrade, specs_path="configs/bradesco_eletro.yaml"
 all_vars       = [v for slugs in config.vars_per_dim.values() for v in slugs]
 upgrade.spend_df = load_breakdown_spend(workspace_dd, all_vars, start_date, end_date)
 
+# Opcional: as quebras declaradas cobrem todo o investimento do veículo?
+coverage       = check_spend_coverage(config, upgrade.spend_df, against="both",
+                                      workspace=workspace_dd, upgrade=upgrade,
+                                      upgrade_spend_col="<coluna do input_data>",
+                                      start_date=start_date, end_date=end_date)
+plot_spend_coverage(coverage)
+
 config, diag   = run_diagnostics(config, upgrade)
 result         = run_deep_dive(config, upgrade, auxiliary_metric_dfs=diag.auxiliary_metric_dfs)
 _              = analyze_deepdive(result)
@@ -158,9 +164,24 @@ df_meta    = consolidate_results(all_results)  # usa result.config.vehicle_spec 
 batch_figs = analyze_batch(all_results, df_meta)
 ```
 
+**Ajuste por cliente:** `after_diagnostics` roda entre o diagnóstico e o fit — o mesmo momento em que o single-client chama `override_funnel`, e a primeira vez que o `__others__` existe.
+
+```python
+def after_diagnostics(run_key, config, diag, upgrade):
+    if run_key == "bradesco_eletro":
+        override_funnel(config, "Ambiente", lower=["__others__ambiente"])
+    check_spend_coverage(config, upgrade.spend_df, against="upgrade",
+                         upgrade=upgrade, upgrade_spend_col="tiktok ads investment")
+    return config
+
+run_deep_dive_batch(..., after_diagnostics=after_diagnostics)
+```
+
+Retornar `None` mantém o config recebido. Um erro dentro do hook derruba só aquele cliente, e vai pro dict `errors`.
+
 ### 5.4 Prior com Dados Auxiliares
 
-Fluxo padrão (5.2): `auxiliary_metric_dfs=diag.auxiliary_metric_dfs`, montado automaticamente por `run_diagnostics` a partir do `auxiliary_metric` do client YAML.
+Fluxo padrão (5.2): `auxiliary_metric_dfs=diag.auxiliary_metric_dfs`, montado automaticamente por `run_diagnostics` a partir do `auxiliary_metric` do veículo.
 
 Pra passar medição própria em vez disso, precisa cobrir **todas** as dims em `config.dims` (`run_deep_dive` levanta erro se faltar uma):
 
@@ -171,9 +192,24 @@ result = run_deep_dive(config, upgrade, auxiliary_metric_dfs=auxiliary_metric_df
 # Ajustar: config.share_prior_scale = 0.005 (no client YAML)
 ```
 
-### 5.5 Adstock Customizado
+### 5.5 Funil e Adstock Customizado
 
-Declare no client YAML via `!instance`/`!params`. Chaves devem ser slugs exatamente como aparecem em `config.vars_per_dim[dim]` **após diagnóstico** (incluindo `__others__<dim>` se houver). Rode `run_diagnostics` primeiro pra saber a lista exata — `_run_raven_dim` (pipeline.py) valida e levanta erro antes de construir o modelo se faltar ou sobrar chave.
+O `__others__<dim>` só existe depois do diagnóstico, então a classificação de funil dele não cabe no client YAML. Use `override_funnel` (config.py) depois de `run_diagnostics` e antes do fit — ele aceita rótulo curto ou slug completo, e preenche as upper funnel que você não citar com o default do Raven (`WeibullAdstockEffect(max_lag=13)`), que é o que torna desnecessário montar o dict inteiro na mão:
+
+```python
+from config import override_funnel
+from prophetverse.effects import WeibullAdstockEffect
+
+override_funnel(
+    config, "product_level_4",
+    lower=["__others__product_level_4"],
+    adstock={"app-retargeting": WeibullAdstockEffect(max_lag=4)},
+)
+```
+
+`lower=None` (default) mantém a classificação atual; `lower=[]` limpa. Se `adstock` for omitido e alguma variável mudar de funil, o dict existente é podado pra continuar batendo com as upper funnel.
+
+Pra persistir no batch, declare no client YAML via `!instance`/`!params`. Aí as chaves precisam ser slugs exatamente como aparecem em `config.vars_per_dim[dim]` **após diagnóstico** (incluindo `__others__<dim>` se houver) — `_run_raven_dim` (pipeline.py) valida e levanta erro antes de construir o modelo se faltar ou sobrar chave.
 
 ```yaml
 upper_funnel_adstock_effect_per_dim:
@@ -214,6 +250,7 @@ Output dir: `outputs/{cliente}_{vehicle}/` (gerado por `generate_report()`)
 |---|---|
 | `metadata.csv` | model_name, client, vehicle, upgrade_run_id, dd_date, period_start, period_end |
 | `contributions.csv` | dim, item, contrib_share, spend_share, roas_index (+ rollups quando `vehicle_spec` tem hierarquia) |
+| `weekly_contributions.csv` | dim, level, item, date, contrib, spend — série semanal por item (`level` = a própria dim no nível atômico, ou o nome do rollup quando `vehicle_spec` tem hierarquia) |
 | `diagnostics.csv` | Saída de `run_diagnostics`: status (kept/discarded_*/others_aggregate), reason, active_weeks, gate_total — só se `diag` for passado |
 | `hill_params.csv` | Parâmetros Hill (max_effect, half_max, slope) por variável e dimensão |
 | `model_inputs.csv` | dim, variable, date, investment, auxiliary_metric — exatamente o que entrou no fit de cada dim (já pós-diagnóstico: `__others__<dim>` no lugar dos membros absorvidos) |
@@ -256,6 +293,7 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 | `test_adstock_per_variable.py` | `upper_funnel_adstock_effect_per_dim`: adstock customizado por variável, chaves obrigatórias |
 | `test_raven_patch.py` | Patch de Hill priors no `Raven` (duck typing, no-op quando vazio) |
 | `test_plots.py` | Figuras Plotly geradas, template dark |
+| `test_spend_coverage.py` | `check_spend_coverage` (janela, buckets, validação) + `plot_spend_coverage` |
 | `test_report.py` | Criação de arquivos CSV e HTML |
 | `test_pipeline_helpers.py` | `align_to`, `wmon_norm` (Period e Datetime) |
 | `test_run_deep_dive_validation.py` | `auxiliary_metric_dfs` sem entry pro dim ou sem coluna obrigatória — levanta erro, sem fit |
@@ -266,14 +304,14 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 ## 8. Premissas e Limitações
 
 1. **`C_t` como âncora.** A distribuição entre sub-canais herda tanto os acertos quanto as imprecisões do modelo upstream.
-2. **`auxiliary_metric` é obrigatório e sempre decide o gate.** Não há fallback automático em runtime: se a dimensão não tiver dado real na métrica configurada, `run_diagnostics` levanta `ValueError` (não faz skip silencioso, nem cai pro investimento sozinho). O fallback pra investimento-como-proxy é uma decisão explícita no client YAML (`auxiliary_metric` apontando pro mesmo valor de `share_likelihood_metric`), não algo que o sistema escolhe sozinho.
+2. **`auxiliary_metric` é obrigatório e sempre decide o gate.** Não há fallback automático em runtime: se a dimensão não tiver dado real na métrica configurada, `run_diagnostics` levanta `ValueError` (não faz skip silencioso, nem cai pro investimento sozinho). O fallback pra investimento-como-proxy é uma decisão explícita no client YAML (`auxiliary_metric` apontando pro `default_metric` do veículo), não algo que o sistema escolhe sozinho.
 3. **Investimento disponível por sub-canal.** Slug ausente no `spend_df` → sem série de investimento → descartado silenciosamente (sem erro, sem entrar em `__others__`), mesmo que passe no gate de exposição. Sub-canal com < `min_spend_share` (default 2%) na métrica de gate vai pra `__others__`. Dimensão inteira pulada se `n_active < 2` ou HHI > `hhi_threshold` (calculados na métrica de gate).
 4. **Frequência semanal (W-MON).** Séries diárias são agregadas; mensais não são suportadas.
 5. **`share_prior_scale`** deve ser calibrado por veículo: 0.05 quando `auxiliary_metric` aponta pro próprio investimento (sem exposição real) → 0.005 com exposição real (ex: impressions).
 6. **Alta correlação entre sub-canais** (todos crescem juntos) reduz identificabilidade. O CSL mitiga mas não elimina.
 7. **`proxy_ratio` fora de 0.85–1.15** pode indicar sinal ruidoso em `C_t` para o nível de detalhe solicitado (ver §6).
-8. **Classificação funil do `__others__`** herda `lower_funnel_vars_per_dim` só quando todos os membros agrupados são lower funnel (caso homogêneo). Se o bucket for misto (alguns lower, alguns upper), não há classificação inequívoca — o agregado fica upper funnel (adstocked) por padrão. Limitação conhecida.
-9. **Adstock per-variável é tudo ou nada por dimensão.** `upper_funnel_adstock_effect_per_dim[dim]` no modo dict exige uma entrada pra cada variável upper funnel daquele dim — sem meio-termo (algumas customizadas, outras no default automático). Cobrir todas com o mesmo efeito, ou usar um único `!instance`/`!params` (sem dict) pra aplicar a todo o grupo, quando não precisar de granularidade por variável.
+8. **Classificação funil do `__others__`** é inferida só quando todos os membros agrupados são lower funnel (caso homogêneo). Bucket misto não tem classificação inequívoca e fica upper funnel (adstocked) por padrão — `run_diagnostics` imprime a composição e o peso do bucket, e `override_funnel` é como você decide o contrário.
+9. **Adstock per-variável no client YAML é tudo ou nada por dimensão.** No modo dict, `upper_funnel_adstock_effect_per_dim[dim]` exige uma entrada pra cada variável upper funnel daquele dim. Via `override_funnel` não: as que você não citar recebem o default automaticamente.
 
 ---
 

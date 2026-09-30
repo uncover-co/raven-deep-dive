@@ -5,7 +5,8 @@ import pandas as pd
 
 from diagnostics import DiagnosisResult, sanitize_dim_name
 from pipeline import align_to, extract_hill_params
-from plots import _clean_label, plot_contributions, plot_roas_index, plot_weekly_df
+from plots import (_clean_label, _dim_category, plot_contributions,
+                   plot_roas_index, plot_weekly_df)
 
 
 def generate_report(
@@ -59,6 +60,13 @@ def generate_report(
         result, rollup_contribs_map, rollup_spend_map, rollup_shares_map
     ).to_csv(csv_contrib, index=False)
     paths["csv_contributions"] = csv_contrib
+
+    # ── weekly_contributions.csv ─────────────────────────────────────────────
+    csv_weekly = os.path.join(out, "weekly_contributions.csv")
+    _build_weekly_contributions_df(
+        result, rollup_contribs_map, rollup_spend_map
+    ).to_csv(csv_weekly, index=False)
+    paths["csv_weekly_contributions"] = csv_weekly
 
     # ── diagnostics.csv ───────────────────────────────────────────────────────
     if diag is not None:
@@ -150,6 +158,7 @@ def _build_contributions_df(
 
         anchor_stan = float(align_to(result.media_dd_contrib, c_df.index).sum())
         dim_contrib_total = float(c_df.sum().sum())
+        cat = _dim_category(result, dim)
 
         fr = result.features_raw.get(dim)
         sh_s = result.shares_spend.get(dim, pd.Series(dtype=float))
@@ -166,7 +175,7 @@ def _build_contributions_df(
                 "dim": dim,
                 "level": level,
                 "item": item,
-                "item_label": _clean_label(str(item)),
+                "item_label": _clean_label(str(item), cat),
                 "anchor_stan": anchor_stan,
                 "contrib_absolute": contrib_abs,
                 "pct_anchor": contrib_abs / anchor_stan if anchor_stan > 0 else float("nan"),
@@ -209,6 +218,48 @@ def _build_contributions_df(
                     rows.append(_row(level, item, contrib_abs, rollup_total, spend_abs, spend_share))
 
     return pd.DataFrame(rows)
+
+
+def _weekly_long(df: pd.DataFrame, value_name: str) -> pd.DataFrame:
+    return (
+        df.rename_axis("date").reset_index()
+        .melt(id_vars="date", var_name="item", value_name=value_name)
+    )
+
+
+def _build_weekly_contributions_df(
+    result,
+    rollup_contribs_map: dict | None = None,
+    rollup_spend_map: dict | None = None,
+) -> pd.DataFrame:
+    columns = ["dim", "level", "item", "date", "contrib", "spend"]
+    frames = []
+
+    def _add(dim, level, contrib_df, spend_df):
+        long = _weekly_long(contrib_df, "contrib")
+        if spend_df is not None:
+            long = long.merge(_weekly_long(spend_df, "spend"), on=["date", "item"], how="left")
+        else:
+            long["spend"] = float("nan")
+        long.insert(0, "level", level)
+        long.insert(0, "dim", dim)
+        frames.append(long)
+
+    for dim in result.config.dims:
+        c_df = result.contribs.get(dim)
+        if c_df is None:
+            continue
+        _add(dim, dim, c_df, result.features_raw.get(dim))
+        for level, rollup_df in (rollup_contribs_map or {}).get(dim, {}).items():
+            _add(dim, level, rollup_df, (rollup_spend_map or {}).get(dim, {}).get(level))
+
+    if not frames:
+        return pd.DataFrame(columns=columns)
+    return (
+        pd.concat(frames, ignore_index=True)[columns]
+        .sort_values(["dim", "level", "item", "date"])
+        .reset_index(drop=True)
+    )
 
 
 def _build_model_inputs_df(result) -> pd.DataFrame:
@@ -323,7 +374,10 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
             "slug": others_col,
             "status": "others_aggregate",
             "reason": f"aggregates {len(bucketed_slugs)} breakdown(s)",
-            "active_weeks": int(base["active_weeks"].max()) if len(base) else None,
+            # The __others__ column is df[members].sum(axis=1), so it is active
+            # on the UNION of its members' weeks. Members get bucketed precisely
+            # for being sparse, so a max understates the aggregate.
+            "active_weeks": _others_active_weeks(diag, dim, base),
             "gate_total": float(base["gate_total"].sum()) if len(base) else None,
             "pct_gate_dim": float(base["pct_gate_dim"].sum()) if len(base) else None,
             "contrib_total": ct,
@@ -331,3 +385,17 @@ def _build_diagnostics_df(result, diag: DiagnosisResult) -> pd.DataFrame:
         })
 
     return pd.DataFrame(rows)
+
+
+def _others_active_weeks(diag, dim: str, base) -> int | None:
+    """Weeks the __others__ column is actually active: the union over members.
+
+    `diag.bucketed_raw[dim]` keeps each member's pre-aggregation series, so the
+    union is exact. Without it, fall back to the max -- an understatement, but
+    the only thing the summary rows support.
+    """
+    raw = (diag.bucketed_raw or {}).get(dim) if diag is not None else None
+    if raw is not None and not raw.empty:
+        per_week = raw.groupby("date")["investment"].sum()
+        return int((per_week > 0).sum())
+    return int(base["active_weeks"].max()) if len(base) else None
