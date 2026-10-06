@@ -260,6 +260,19 @@ Output dir: `outputs/{cliente}_{vehicle}/` (gerado por `generate_report()`)
 | `weekly_{dim}.html` | Área empilhada: contribuição semanal por sub-canal, um por dimensão |
 | `weekly_{dim}_{level}.html` | Mesmo, no nível de rollup (quando `vehicle_spec` define rollups) |
 
+### Relatório HTML (Fractal Z)
+
+Um HTML navegável (sidebar `[ NN ]`, um bloco por recorte, tema claro/escuro) gerado a partir dos CSVs acima — não refaz o fit:
+
+```bash
+python src/build_html_report.py outputs/Cliente_VeiculoA outputs/Cliente_VeiculoB \
+    -o outputs/deepdive.html --client "Cliente" [--plotly inline]
+```
+
+Ou `from report_gen import generate_html_report`. Blocos: visão geral (gates por veículo/quebra), qualidade, contribuição vs investimento (uma aba por nível de rollup), série semanal, saturação (Hill) e diagnóstico. Com mais de uma pasta aparece um filtro de veículo. `hill_params.csv` e `diagnostics.csv` são opcionais: sem eles o bloco correspondente some.
+
+`src/report_gen/_fractal_z.py` e `_payload.py` são cópia do `report_gen` do projeto TIM Ultrafibra (`model-development`, branch `model/tim-ultrafibra-upgrade`, commit 9351c2e), com o cabeçalho registrando a origem. Atualize por cópia. As fontes (PP Neue Machina, licenciada pela Uncover; Inter, OFL) estão em `assets/fractal_z/`.
+
 ### Batch
 
 | Arquivo | Conteúdo |
