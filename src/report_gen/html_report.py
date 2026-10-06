@@ -288,13 +288,14 @@ def _fig_hill(hill: pd.DataFrame, rotulos: dict[str, str], ordem: list[str]) -> 
         curva = lambda xn: me * xn**s / (xn**s + k**s)  # noqa: E731
         cor = fz.serie(i)
         fig.add_trace(go.Scatter(
-            x=x, y=curva(x / col_max), name=rot, line=dict(color=cor, width=2),
+            x=x, y=curva(x / col_max), name=rot, legendgroup=rot, line=dict(color=cor, width=2),
             hovertemplate="investimento %{x:,.0f}<br>efeito %{y:,.1f}<extra>" + _esc(rot) + "</extra>",
         ))
         if _ok(h["mean_spend"]):
             fig.add_trace(go.Scatter(
                 x=[h["mean_spend"]], y=[curva(h["mean_spend"] / col_max)], mode="markers",
-                showlegend=False, marker=dict(color=cor, size=9, symbol="circle"),
+                showlegend=False, legendgroup=rot,  # some junto com a curva ao desmarcar na legenda
+                marker=dict(color=cor, size=9, symbol="circle"),
                 hovertemplate=f"{_esc(rot)} — gasto médio: %{{x:,.0f}}<extra></extra>",
             ))
     fz.layout_figura(fig, height=420)

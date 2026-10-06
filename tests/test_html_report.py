@@ -102,3 +102,16 @@ def test_html_report_missing_contributions_raises():
     with tempfile.TemporaryDirectory() as tmp:
         with pytest.raises(FileNotFoundError):
             generate_html_report([tmp])
+
+
+def test_hill_marker_follows_its_curve_in_the_legend():
+    from report_gen.html_report import _fig_hill
+    hill = pd.DataFrame({
+        "variable": ["sp"], "max_effect": [0.5], "half_max_norm": [0.4], "half_max_spend": [8.0],
+        "slope": [2.0], "mean_spend": [10.0], "saturation_at_mean": [0.5], "col_max": [20.0],
+        "max_effect_kpi": [75.0],
+    })
+    fig = _fig_hill(hill, {"sp": "SP"}, ["sp"])
+    curva, marcador = fig.data
+    assert curva.legendgroup == marcador.legendgroup == "SP"
+    assert curva.showlegend is not False and marcador.showlegend is False
