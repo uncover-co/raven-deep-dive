@@ -43,6 +43,20 @@ _ALERTA_TXT = {
     "degrau": "Slope de degrau: a resposta é liga/desliga. ROAS index não mede "
               "resposta a investimento.",
 }
+_LEGENDA_AJUSTE = (
+    "<b>R²</b>: quanto da variação semanal da âncora a soma dos itens reproduz (1 = perfeito). "
+    "Mede o formato da série.",
+    "<b>WAPE</b>: erro semanal médio da soma dos itens contra a âncora, em % da âncora "
+    "(Σ|âncora − soma| / Σ|âncora|). Pode ser alto mesmo com proxy_ratio ≈ 1, que só confere o total.",
+    "R² e WAPE são calculados na própria amostra do fit, sem holdout.",
+)
+_LEGENDA_SLOPE = (
+    "<b>slope</b>: inclinação da curva Hill. Até ~1 a curva é côncava (retorno decrescente desde o "
+    "primeiro real); acima de 1 ela tem forma de S, e o efeito acelera antes de saturar.",
+    f"Slope acima de {SLOPE_ALERTA:g} é <b>degrau</b>: a resposta é liga/desliga, e o ROAS index não "
+    f"mede resposta a investimento. Saturação no gasto médio acima de {SATURACAO_ALERTA:.0%} "
+    "também gera alerta.",
+)
 _STATUS_TXT = {
     "kept": ("mantida", "ok"),
     "others_aggregate": ("agregada em __others__", "neutral"),
@@ -304,6 +318,10 @@ def _roas_tag(roas) -> str:
     return fz.tag_trend(_num(roas, 2), "positive" if roas >= 1 else "negative")
 
 
+def _legenda(linhas: tuple[str, ...]) -> str:
+    return '<ul class="fz-notes">' + "".join(f"<li>{t}</li>" for t in linhas) + "</ul>"
+
+
 def _qualidade(linha: pd.Series) -> str:
     ok_pr, ok_csl = _gates(linha)
     return fz.tiles([
@@ -312,9 +330,10 @@ def _qualidade(linha: pd.Series) -> str:
         fz.tile(_num(linha["csl_max_dev"], 3), "gate", "csl_max_dev", _pill_gate(ok_csl),
                 hint=f"maior desvio do share contra a prior CSL · ok abaixo de {CSL_MAX}"),
         fz.tile(_num(linha["r2"], 3), "ajuste", "R² da âncora",
-                hint="quanto a soma dos itens reproduz a série da âncora"),
-        fz.tile(_pct(linha["wape"], 1), "ajuste", "WAPE da âncora"),
-    ])
+                hint="quanto da variação semanal da âncora a soma dos itens reproduz"),
+        fz.tile(_pct(linha["wape"], 1), "ajuste", "WAPE da âncora",
+                hint="erro semanal médio da soma dos itens contra a âncora, em % da âncora"),
+    ]) + _legenda(_LEGENDA_AJUSTE)
 
 
 def _tabela_contrib(itens: pd.DataFrame, alertas: dict[str, str]) -> str:
@@ -428,7 +447,7 @@ def _partes_veiculo(v: dict, figs: _Figuras) -> dict[str, str]:
         if hill is not None and not hill.empty:
             partes["b05"].append(sub(dim) + fz.painel(
                 fz.block(figs.html(_fig_hill(hill, rotulos, ordem)))
-                + fz.block(_tabela_hill(hill, rotulos, ordem)),
+                + fz.block(_tabela_hill(hill, rotulos, ordem) + _legenda(_LEGENDA_SLOPE)),
                 f"hill-{dim}-{uid}",
             ))
 

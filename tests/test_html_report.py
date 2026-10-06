@@ -68,6 +68,14 @@ def test_html_report_has_blocks_and_figures():
     assert 'class="pfig"' in html and "data-fz-figs" in html
 
 
+def test_html_report_has_legends_for_fit_metrics_and_slope():
+    with tempfile.TemporaryDirectory() as tmp:
+        html = generate_html_report([_run_dir(tmp)], os.path.join(tmp, "dd.html")).read_text(encoding="utf-8")
+    assert "Σ|âncora − soma| / Σ|âncora|" in html   # WAPE
+    assert "sem holdout" in html                      # R² / WAPE são in-sample
+    assert "liga/desliga" in html                     # slope de degrau
+
+
 def test_html_report_flags_gate_failure_and_alert():
     with tempfile.TemporaryDirectory() as tmp:
         html = generate_html_report([_run_dir(tmp)], os.path.join(tmp, "dd.html")).read_text(encoding="utf-8")
