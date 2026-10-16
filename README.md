@@ -137,7 +137,7 @@ config         = build_config(upgrade, specs_path="configs/bradesco_eletro.yaml"
 
 # upgrade.spend_df vem vazio -- popula com o breakdown real antes do diagnóstico.
 all_vars       = [v for slugs in config.vars_per_dim.values() for v in slugs]
-upgrade.spend_df = load_breakdown_spend(workspace_dd, all_vars, start_date, end_date)
+upgrade.spend_df = load_breakdown_data(workspace_dd, all_vars, start_date, end_date)
 
 # Opcional: as quebras declaradas cobrem todo o investimento do veículo?
 coverage       = check_spend_coverage(config, upgrade.spend_df, against="both",
