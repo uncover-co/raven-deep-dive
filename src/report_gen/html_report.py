@@ -381,7 +381,9 @@ def _tabela_diag(diag: pd.DataFrame, dim: str) -> str:
     headers = ["item", "status", "motivo", "semanas ativas", "% do gasto da dim", "% da contribuição da dim"]
     rows = []
     for r in d.itertuples(index=False):
-        txt, st = _STATUS_TXT.get(r.status, (r.status.replace("discarded_", "descartada: "), "fail"))
+        # descarte pelos gates de investimento é rotina do pipeline, não falha: fica neutro,
+        # e o vermelho sobra para gate reprovado
+        txt, st = _STATUS_TXT.get(r.status, (r.status.replace("discarded_", "descartada: "), "neutral"))
         rows.append([
             _esc(r.slug), fz.status_pill(txt, st), _esc(r.reason),
             (_num(r.active_weeks, 0), r.active_weeks),

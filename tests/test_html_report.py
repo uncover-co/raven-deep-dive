@@ -115,3 +115,14 @@ def test_hill_marker_follows_its_curve_in_the_legend():
     curva, marcador = fig.data
     assert curva.legendgroup == marcador.legendgroup == "SP"
     assert curva.showlegend is not False and marcador.showlegend is False
+
+
+def test_discarded_items_are_neutral_and_failed_gates_stay_red():
+    import re
+    with tempfile.TemporaryDirectory() as tmp:
+        html = generate_html_report([_run_dir(tmp)], os.path.join(tmp, "dd.html")).read_text(encoding="utf-8")
+    body = re.sub(r"<style>.*?</style>|<script[^>]*>.*?</script>", "", html, flags=re.S)
+    pill = lambda k: re.findall(rf'class="fz-status fz-status-{k}"[^>]*>([^<]*)<', body)  # noqa: E731
+    assert any("descartada" in t for t in pill("neutral"))
+    assert not any("descartada" in t for t in pill("fail"))
+    assert "fora" in pill("fail")                       # Midia: proxy_ratio 1.4 reprovado
