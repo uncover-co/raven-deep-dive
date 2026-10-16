@@ -76,7 +76,7 @@ MMM Base
 
 Cada dimensão é ajustada **independentemente**, mas todas usam o mesmo `C_t` como âncora. O pipeline opera em três etapas:
 
-1. **Extração** — `load_upgrade_stan` / `load_meridian_upgrade` / `load_raven_upgrade`: carrega `contrib_df` e `spend_df` via parquets MLflow.
+1. **Extração** — `load_upgrade_stan` / `load_meridian_upgrade` / `load_raven_upgrade` (ou `load_upgrade_auto`, que despacha pelo `model_type`): carrega `contrib_df` e `spend_df` via parquets MLflow.
 2. **Diagnóstico** — `run_diagnostics`: usa `auxiliary_metric` (obrigatório) como gate — filtra sub-canais com <2% nessa métrica, agrupa em `__others__`, calcula HHI e semanas ativas. `auxiliary_metric` é declarado no `vehicle_specs.yaml`, ao lado do `default_metric` — é o que o veículo mede, não o que o cliente escolhe. Se o veículo não tem exposição real, aponta pro próprio `default_metric`. O client YAML pode sobrescrever (o build avisa quando isso acontece). Se a dimensão não tiver dado real na métrica configurada, `run_diagnostics` levanta erro (sem fallback silencioso).
 3. **Deep Dive Raven** — `run_deep_dive`: ajusta modelo Hill por dimensão, ancorado em `C_t`. Requer `auxiliary_metric_dfs` (de `diag.auxiliary_metric_dfs`) — não é opcional.
 
@@ -318,7 +318,7 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 
 1. **`C_t` como âncora.** A distribuição entre sub-canais herda tanto os acertos quanto as imprecisões do modelo upstream.
 2. **`auxiliary_metric` é obrigatório e sempre decide o gate.** Não há fallback automático em runtime: se a dimensão não tiver dado real na métrica configurada, `run_diagnostics` levanta `ValueError` (não faz skip silencioso, nem cai pro investimento sozinho). O fallback pra investimento-como-proxy é uma decisão explícita no client YAML (`auxiliary_metric` apontando pro `default_metric` do veículo), não algo que o sistema escolhe sozinho.
-3. **Investimento disponível por sub-canal.** Slug ausente no `spend_df` → sem série de investimento → descartado silenciosamente (sem erro, sem entrar em `__others__`), mesmo que passe no gate de exposição. Sub-canal com < `min_spend_share` (default 2%) na métrica de gate vai pra `__others__`. Dimensão inteira pulada se `n_active < 2` ou HHI > `hhi_threshold` (calculados na métrica de gate).
+3. **Investimento disponível por sub-canal.** Slug ausente no `spend_df` → sem série de investimento → descartado silenciosamente (sem erro, sem entrar em `__others__`), mesmo que passe no gate de exposição. Sub-canal com < `min_aux_share` (default 2%) na métrica de gate vai pra `__others__`. Dimensão inteira pulada se `n_active < 2` ou HHI > `hhi_threshold` (calculados na métrica de gate).
 4. **Frequência semanal (W-MON).** Séries diárias são agregadas; mensais não são suportadas.
 5. **`share_prior_scale`** deve ser calibrado por veículo: 0.05 quando `auxiliary_metric` aponta pro próprio investimento (sem exposição real) → 0.005 com exposição real (ex: impressions).
 6. **Alta correlação entre sub-canais** (todos crescem juntos) reduz identificabilidade. O CSL mitiga mas não elimina.
@@ -345,4 +345,3 @@ python deepdive/benchmarks/share_recovery_benchmark.py
 - Mover `ContributionShareLikelihood` para `prophetverse` como efeito nativo
 - Mover `extra_effects` + prior dicts para `mmmverse` como API nativa do Raven
 - Classe `RavenDeepDive` em `mmmverse` encapsulando o fluxo completo
-- `load_raven_upgrade()` para contribuições de modelos Raven como base
