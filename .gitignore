@@ -11,3 +11,4 @@ onepage/
 *.docx
 .DS_Store
 outputs/
+.worktrees/
